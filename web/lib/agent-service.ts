@@ -14,7 +14,7 @@ import type {
 
 const AGENT_SERVICE_URL = process.env.AGENT_SERVICE_URL ?? "http://localhost:8000";
 
-// Long enough for a real Gemini/Veo call, short enough that a hung backend
+// Long enough for a real Gemini/Omni Flash call, short enough that a hung backend
 // doesn't leave the UI (and the user) stuck forever with no feedback.
 const DEFAULT_TIMEOUT_MS = 45_000;
 
@@ -724,28 +724,74 @@ export interface GenerateMediaVideoResponse {
   prompt: string;
   status: string;
   video_url?: string;
+  interaction_id?: string;
+  error?: string;
 }
 
-export function generateMediaVideo(
-  prompt: string,
-  durationSeconds = 5,
-  stylePreset = "35mm Anamorphic Film",
-  imageUrl?: string,
-  characterName?: string,
-  aspectRatio?: string
-) {
+export interface GenerateMediaVideoOptions {
+  prompt: string;
+  aspectRatio?: string;
+  resolution?: string;
+  stylePreset?: string;
+  imageUrl?: string;
+  firstFrameUrl?: string;
+  lastFrameUrl?: string;
+  characterName?: string;
+  task?: string;
+}
+
+export function generateMediaVideo(options: GenerateMediaVideoOptions) {
   return postJson<GenerateMediaVideoResponse>("/media/video", {
-    prompt,
-    duration_seconds: durationSeconds,
-    style_preset: stylePreset,
-    image_url: imageUrl,
-    character_name: characterName,
-    aspect_ratio: aspectRatio,
+    prompt: options.prompt,
+    aspect_ratio: options.aspectRatio,
+    resolution: options.resolution,
+    style_preset: options.stylePreset,
+    image_url: options.imageUrl,
+    first_frame_url: options.firstFrameUrl,
+    last_frame_url: options.lastFrameUrl,
+    character_name: options.characterName,
+    task: options.task,
+  });
+}
+
+export interface EditMediaVideoOptions {
+  instruction: string;
+  /** A clip this service rendered — the cheap multi-turn path (no re-upload). */
+  interactionId?: string;
+  /** A user-supplied clip to upload and edit instead. Must be <=10s. */
+  videoUrl?: string;
+  aspectRatio?: string;
+}
+
+export function editMediaVideo(options: EditMediaVideoOptions) {
+  return postJson<GenerateMediaVideoResponse>("/media/video/edit", {
+    instruction: options.instruction,
+    interaction_id: options.interactionId,
+    video_url: options.videoUrl,
+    aspect_ratio: options.aspectRatio,
+  });
+}
+
+export interface ExtendMediaVideoOptions {
+  prompt?: string;
+  /** A clip this service rendered — the cheap multi-turn path (no re-upload). */
+  interactionId?: string;
+  /** A user-supplied clip to upload and extend instead. Must be <=10s. */
+  videoUrl?: string;
+  aspectRatio?: string;
+}
+
+export function extendMediaVideo(options: ExtendMediaVideoOptions) {
+  return postJson<GenerateMediaVideoResponse>("/media/video/extend", {
+    prompt: options.prompt,
+    interaction_id: options.interactionId,
+    video_url: options.videoUrl,
+    aspect_ratio: options.aspectRatio,
   });
 }
 
 export function getVideoStatus(operationName: string) {
-  return getJson<{ status: string; video_url?: string; error?: string }>(
+  return getJson<{ status: string; video_url?: string; interaction_id?: string; error?: string }>(
     `/media/video/status?operation_name=${encodeURIComponent(operationName)}`
   );
 }

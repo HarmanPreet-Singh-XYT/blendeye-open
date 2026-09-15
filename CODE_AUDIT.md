@@ -53,7 +53,7 @@ $ grep -rn "Depends\|HTTPBearer\|APIKeyHeader\|X-API-Key" agent-service/app
 And the deploy workflow publishes that service to the world:
 
 ```yaml
-# .github/workflows/deploy-backend.yml:91
+# .github/workflows/deploy-blendeye-open.yml:91
 gcloud run deploy ${{ env.SERVICE_NAME }} \
   --allow-unauthenticated \
   --set-env-vars "${ENV_VARS}"          # includes GOOGLE_API_KEY
@@ -61,7 +61,7 @@ gcloud run deploy ${{ env.SERVICE_NAME }} \
 
 with `ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS || '*' }}` (`:60`) parsed to `["*"]` (`config.py:89`). FastAPI's CORS never constrained non-browser clients anyway. The live URL is published in `grafana/blendeye-studio-dashboard.json:119` and in every CI run's step summary.
 
-**Impact.** Anyone can `POST /api/media/video` (or hit Cloud Run directly) and start a billable Veo render, a Lyria score, an Imagen storyboard, a Gemini agent run, or a billed Parallel Web search — on the project owner's keys, with no rate limit and no per-caller quota. They can also read and destroy other tenants' data through the endpoints listed below. `/metrics` and `/observability/overview` additionally leak internal topology.
+**Impact.** Anyone can `POST /api/media/video` (or hit Cloud Run directly) and start a billable video render, a Lyria score, an Imagen storyboard, a Gemini agent run, or a billed Parallel Web search — on the project owner's keys, with no rate limit and no per-caller quota. They can also read and destroy other tenants' data through the endpoints listed below. `/metrics` and `/observability/overview` additionally leak internal topology.
 
 **Fix.** Add a shared `requireAuth(req)` helper (or a `middleware.ts` matcher on `/api/:path*`) and apply it to every route that touches a paid API or user data. Require an API key or IAM auth on the Cloud Run service and drop `--allow-unauthenticated`. Never default `ALLOWED_ORIGINS` to `*`.
 
@@ -150,7 +150,7 @@ Verified by execution:
 
 Reachable unauthenticated from `POST /media/video` (`media.py:599`), `POST /media/music` (`media.py:934`, including `image_urls`), and `POST /media/video/sequence/start` via `reference_images` (`video_sequencer.py:177-190`) — which in turn is reachable through the web routes `web/app/api/media/video/route.ts:8` and `web/app/api/media/music/route.ts:9`, which forward the client's `image_url` verbatim.
 
-**Impact.** The process runs as uid 999 in Docker or the dev user locally, so it can read `agent-service/.env` (holding `GOOGLE_API_KEY`, `CLICKHOUSE_PASSWORD`, `SUPABASE_SECRET_KEY`, `GRAFANA_SERVICE_ACCOUNT_TOKEN`) and any other readable file. The bytes are forwarded to Google as the Veo/Lyria conditioning image, so this is an exfiltration primitive, not merely disclosure. The HTTP branch reaches internal services and cloud metadata endpoints.
+**Impact.** The process runs as uid 999 in Docker or the dev user locally, so it can read `agent-service/.env` (holding `GOOGLE_API_KEY`, `CLICKHOUSE_PASSWORD`, `SUPABASE_SECRET_KEY`, `GRAFANA_SERVICE_ACCOUNT_TOKEN`) and any other readable file. The bytes are forwarded to Google as the Gemini/Lyria conditioning input, so this is an exfiltration primitive, not merely disclosure. The HTTP branch reaches internal services and cloud metadata endpoints.
 
 **Fix.** Resolve the static path with `Path.resolve()` and require `is_relative_to(public_root)`. For the HTTP branch, allowlist hosts or reject private/loopback/link-local IPs after resolution and disable redirects.
 
@@ -274,13 +274,13 @@ The extension is preserved unfiltered (`.html`, `.svg` survive; note the `[^a-zA
 
 **Fix.** `await asyncio.to_thread(...)` for the sync calls and pass an explicit `HttpOptions(timeout=...)`.
 
-### H4 — The Veo sequencer blocks the event loop for up to 120 s per poll
-`video_sequencer.py:245,264` call `dispatch_veo_generation` and `poll_veo_operation` synchronously; the latter performs `client.files.download(...)` and `_upload_bytes_to_supabase(...)` (`media.py:653` uses `httpx.Client(timeout=120)`). Measured with a 100 ms heartbeat: ticks at `[0.0, 518.7, 619.8, ...]` ms — the loop was frozen for the full duration of each call.
+### H4 — RESOLVED: the video sequencer blocked the event loop for up to 120 s per poll
+Originally `video_sequencer.py` called the generation and poll helpers synchronously, and the poll performed `client.files.download(...)` and `_upload_bytes_to_supabase(...)` (`media.py` uses `httpx.Client(timeout=120)`). Measured with a 100 ms heartbeat: ticks at `[0.0, 518.7, 619.8, ...]` ms — the loop was frozen for the full duration of each call.
 
-**Fix.** `await asyncio.to_thread(...)` around both.
+**Fix (applied during the Gemini Omni Flash migration).** Both call sites now hand the blocking work to a worker thread: the sequencer via `await asyncio.wait_for(asyncio.to_thread(run_omni_video_interaction, ...))`, and the single-clip render via `asyncio.to_thread` inside `_start_omni_job`. The prescribed `HttpOptions(timeout=...)` is still outstanding. The original 100 ms-heartbeat measurement has **not** been re-run against the new code — this is a code-level confirmation, not a re-measurement.
 
 ### H5 — A crashed sequence task leaves the job permanently `running`, and `_JOBS` then grows without bound
-`video_sequencer.py:233` calls `_build_shot_prompt(shot)` **outside** the `try` block that starts at `:244`, and the frame-extraction `except` at `:312` catches only `FrameExtractionError`. A non-string value in the client-supplied `continuity_bible` raises `TypeError` inside `sanitize_veo_prompt` (`:144`), and `extract_last_frame` can raise `binascii.Error`/`OSError`. Reproduced: after such an exception the job's status stayed `"running"` forever and asyncio logged `Task exception was never retrieved`. `_prune_jobs` (`:107-127`) only evicts **terminal** jobs, so the stuck entry is never removed and the UI polls it forever.
+`video_sequencer.py:233` calls `_build_shot_prompt(shot)` **outside** the `try` block that starts at `:244`, and the frame-extraction `except` at `:312` catches only `FrameExtractionError`. A non-string value in the client-supplied `continuity_bible` raises `TypeError` inside `sanitize_video_prompt` (`:144`), and `extract_last_frame` can raise `binascii.Error`/`OSError`. Reproduced: after such an exception the job's status stayed `"running"` forever and asyncio logged `Task exception was never retrieved`. `_prune_jobs` (`:107-127`) only evicts **terminal** jobs, so the stuck entry is never removed and the UI polls it forever.
 
 **Fix.** Wrap the whole per-shot body (and the task) so every exit path sets `job.status` to `"error"`, and prune stale non-terminal jobs after a deadline.
 
@@ -291,8 +291,8 @@ The extension is preserved unfiltered (`.html`, `.svg` survive; note the `[^a-zA
 
 **Fix.** Have both methods return/raise a real status, surface a non-200 or `_fallback` flag with the true count, and consult `_memory_events` when the cloud result is empty.
 
-### H7 — Unbounded Veo job fan-out from one request
-`routers/video_sequence.py:37-40` validates only that `shots` is non-empty. There is no cap on `len(shots)`, on prompt length, or on concurrent jobs. One unauthenticated request with 5,000 shots schedules 5,000 real Veo renders and an `asyncio` task that runs for days; N such requests multiply it, and in-flight jobs are never evicted (H5).
+### H7 — Unbounded video job fan-out from one request
+`routers/video_sequence.py:37-40` validates only that `shots` is non-empty. There is no cap on `len(shots)`, on prompt length, or on concurrent jobs. One unauthenticated request with 5,000 shots schedules 5,000 real video renders and an `asyncio` task that runs for days; N such requests multiply it, and in-flight jobs are never evicted (H5).
 
 **Fix.** Cap `shots` (≈12), cap concurrent running jobs, and cap total prompt bytes.
 
@@ -393,7 +393,7 @@ if (existing && existing.user_id && existing.user_id !== explicitUserId) { retur
 **Fix.** `ALTER COLUMN user_id SET NOT NULL`, or treat NULL-owner rows as admin-only and remove both guest fallbacks. `supabase/cleanup-guest-data.sql` exists precisely because these rows are considered dead weight.
 
 ### H14 — CI cannot fail, and secrets ship as plaintext env vars
-`.github/workflows/deploy-backend.yml:106-114`:
+`.github/workflows/deploy-blendeye-open.yml:106-114`:
 
 ```bash
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/health")
@@ -412,7 +412,7 @@ The step exits 0 on failure — a completely broken revision reports green. Rela
 
 **Fix.** Require auth and assert project ownership before returning events or knowledge state.
 
-### H16 — Veo operation and sequence job ids have no ownership record
+### H16 — Video operation and sequence job ids have no ownership record
 `web/app/api/media/video/status/route.ts:7` and `video/sequence/status/route.ts:7` take `operation_name` / `job_id` from the query string and return the render result for any id. Neither agent-service nor the web layer records which caller started a job (`_JOBS` is a bare `dict[str, SequenceJob]` keyed by a random id, with no owner field). A successful poll on the sequence path also triggers `persistDataUriToBucket` / `persistLocalMediaToBucket` writes.
 
 **Impact.** Anyone holding or guessing an id can read another user's render output and cause the server to re-upload media on their behalf. Combined with C1, the render *content* is already reachable; the missing ownership check makes it permanent even after auth is added elsewhere.
@@ -491,7 +491,7 @@ The step exits 0 on failure — a completely broken revision reports green. Rela
 
 - **L1 — Double-counted metric.** `routers/observability.py:106` increments `HTTP_REQUESTS_TOTAL` manually for a request the middleware already counts, so the Grafana throughput panel over-reports that endpoint 2×.
 - **L2 — Raw exception text in `/metrics`.** `main.py:174` returns `f"ClickHouse unreachable: {exc}"`; driver errors embed host, port, database and username.
-- **L3 — Greedy capture `\(resembling ...\)` risk in the Veo sanitizer.** `prompt_sanitizer.py:69-72` uses `[^)]+` across a whole clause; it will delete legitimately-named non-celebrity text and can strip more of the prompt than intended. Low impact, but it silently degrades prompts.
+- **L3 — Greedy capture `\(resembling ...\)` risk in the video prompt sanitizer.** `prompt_sanitizer.py` uses `[^)]+` across a whole clause; it will delete legitimately-named non-celebrity text and can strip more of the prompt than intended. Low impact, but it silently degrades prompts.
 - **L4 — Hardcoded "Elena" in the fallback screenplay.** `app/api/project/generate/route.ts:165,179,181` interpolates `pLead`/`pCounter` everywhere *except* these three strings, so a project with characters named anything else produces a screenplay where a character is addressed as "Elena".
 - **L5 — Hard failures returned as HTTP 200 with empty payloads.** `media/tts/route.ts:87`, `media/tts/multi:73`, `media/music:96`, `script/bridge:130` return `audio_url: ""` with status 200; `audio-studio-view.tsx:305-307` only checks `res.ok` and silently drops. Monitoring sees success.
 - **L6 — Unguarded `req.json()`.** `app/api/hot-seat/ask/route.ts:5` is the only one of 34 sites without a 400 handler; malformed JSON produces a 500.
@@ -500,7 +500,7 @@ The step exits 0 on failure — a completely broken revision reports green. Rela
 - **L9 — Production identifiers baked into tracked files.** `web/next.config.ts:9` hardcodes `vcbclecweorugfucdubm.supabase.co` (redundant with the preceding `*.supabase.co`); `app/api/media/image/route.ts:67,80-96` hardcodes fallback URLs on that project; `grafana/blendeye-studio-dashboard.json:119` embeds the Cloud Run URL with GCP project number `369992010022`; `config.py:48` defaults to the real `blendeye.grafana.net` while CI falls back to a different stack (`:78`). Move to env vars.
 - **L10 — Env documentation drift.** `METRICS_TARGET`/`METRICS_SCHEME` (read by `docker-compose.yml:103-104` and `grafana/alloy/config.alloy:17,19`) appear in no `.env.example`; `GEMINI_API_KEY` (read at `web/app/api/showrunner/chat/route.ts:75`) appears in none; the root `.env.example` omits `NEXT_PUBLIC_SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` that `docker-compose.yml:78-81` consumes.
 - **L11 — Missing index for the RLS predicate.** `project_snapshots` has only `(project_id, created_at DESC)` (`schema.sql:97`) while every access filters `user_id = auth.uid()`. `assets`/`projects`/`talent_vault`/`scratchpad_notes` all have the `user_id` index.
-- **L12 — 82 MB of generated media committed to git.** `web/public/videos/*.mp4` and `web/public/audio/scores/*.mp3` (`veo_*.mp4`, `score_*.mp3`) are tracked build outputs. `.git` is 82 MB. Consider Git LFS or an untrack/reference approach.
+- **L12 — 82 MB of generated media committed to git.** `web/public/videos/*.mp4` and `web/public/audio/scores/*.mp3` (`omni_*.mp4`, `score_*.mp3`) are tracked build outputs. `.git` is 82 MB. Consider Git LFS or an untrack/reference approach.
 
 ---
 

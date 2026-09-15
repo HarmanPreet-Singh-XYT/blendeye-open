@@ -142,7 +142,7 @@ function ProductionVisual() {
   const items = [
     { icon: Mic, label: "Table read", detail: "Multi-speaker TTS, 6 voice timbres, DSP reverb/pitch" },
     { icon: Map, label: "Floor plan", detail: "35mm / 50mm / 85mm / 24mm lens presets" },
-    { icon: Video, label: "Veo 3.1 shots", detail: "Pixel-anchored across cuts, 2.39:1 widescreen" },
+    { icon: Video, label: "Omni Flash shots", detail: "Pixel-anchored across cuts, 2.39:1 widescreen" },
     { icon: GitBranch, label: "Version control", detail: "Full snapshots, undo/redo, rollback" },
   ];
   return (
@@ -226,7 +226,7 @@ const STEPS: Array<{
     tag: "Production tools",
     title: "Pre-production, end to end",
     description:
-      "Beyond the writers' room: cast table reads with distinct AI voices, block scenes on a 2D floor plan with real lens presets, and generate Veo 3.1 video shots that stay visually consistent across cuts by conditioning each shot on the last frame of the one before it.",
+      "Beyond the writers' room: cast table reads with distinct AI voices, block scenes on a 2D floor plan with real lens presets, and generate Omni Flash video shots that stay visually consistent across cuts by conditioning each shot on the last frame of the one before it.",
     visual: <ProductionVisual />,
   },
   {

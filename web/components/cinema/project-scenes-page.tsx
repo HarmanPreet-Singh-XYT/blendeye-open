@@ -949,15 +949,15 @@ export function ProjectScenesPage({
                                   if (sceneVideoUrl) {
                                     setPreviewVideoUrl({
                                       url: sceneVideoUrl,
-                                      title: `Scene ${scene.sceneNumber}: ${scene.slugline || scene.title} — Veo Master Take`,
+                                      title: `Scene ${scene.sceneNumber}: ${scene.slugline || scene.title} — Master Video Take`,
                                     });
                                   }
                                 }}
                                 className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/35 hover:text-purple-200 transition-colors cursor-pointer shadow-xs"
-                                title="Play Veo 3.1 Master Take"
+                                title="Play Omni Flash Master Take"
                               >
                                 <Play className="h-2.5 w-2.5 fill-purple-300 text-purple-300" />
-                                Veo 3.1 Master Take
+                                Omni Flash Master Take
                               </button>
                             )}
                             {isActive && (
@@ -1155,11 +1155,11 @@ export function ProjectScenesPage({
                                     onClick={() =>
                                       setPreviewVideoUrl({
                                         url: sceneVideoUrl,
-                                        title: `Scene ${scene.sceneNumber}: ${scene.slugline || scene.title} — Veo Master Take`,
+                                        title: `Scene ${scene.sceneNumber}: ${scene.slugline || scene.title} — Master Video Take`,
                                       })
                                     }
                                     className="h-8 w-14 rounded overflow-hidden border border-purple-500/60 bg-black shrink-0 relative shadow-2xs cursor-pointer group hover:ring-2 hover:ring-purple-400 transition-all flex items-center justify-center"
-                                    title="Play Veo 3.1 Master Take"
+                                    title="Play Omni Flash Master Take"
                                   >
                                     <video
                                       src={sceneVideoUrl}
@@ -1172,7 +1172,7 @@ export function ProjectScenesPage({
                                       <Play className="h-3 w-3 fill-white text-white drop-shadow-md" />
                                     </div>
                                     <span className="absolute bottom-0.5 right-0.5 bg-purple-950/90 text-[7px] font-mono text-purple-300 px-0.5 rounded-xs leading-none">
-                                      VEO
+                                       VIDEO
                                     </span>
                                   </button>
                                 )}
@@ -1568,7 +1568,7 @@ export function ProjectScenesPage({
         }}
       />
 
-      {/* Veo Video Preview Modal */}
+      {/* Video Preview Modal */}
       {previewVideoUrl && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in"

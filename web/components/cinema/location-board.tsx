@@ -2510,7 +2510,7 @@ export function LocationBoard({
                                 {expandedPromptCandId === cand.candidate_id && cand.preview_image_prompt && (
                                   <div className="p-2 rounded bg-background/80 border border-border/80 space-y-1.5 text-xs">
                                     <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                      <span className="uppercase font-semibold tracking-wider text-accent">Veo / Imagen 3 Prompt:</span>
+                                      <span className="uppercase font-semibold tracking-wider text-accent">Omni Flash / Imagen 3 Prompt:</span>
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -2547,7 +2547,7 @@ export function LocationBoard({
                                     variant="outline"
                                     className="text-[10px] font-medium text-accent border-accent/40 bg-accent/5"
                                   >
-                                    Veo / Imagen 3 Keyframe
+                                    Omni Flash / Imagen 3 Keyframe
                                   </Badge>
                                 </div>
 
@@ -3508,7 +3508,7 @@ export function LocationBoard({
                       <div>
                         <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
                           <Camera className="h-3.5 w-3.5 text-accent" />
-                          Veo &amp; Imagen 3 Concept Keyframe Studio
+                          Omni Flash &amp; Imagen 3 Concept Keyframe Studio
                         </span>
                         <p className="text-[11px] text-muted-foreground">
                           Photorealistic visual rendering for Scene {selectedScene?.sceneNumber} (
@@ -3691,7 +3691,7 @@ export function LocationBoard({
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           Click &quot;Generate Visual&quot; above to render an on-demand 16:9 cinematic look for{" "}
                           <strong className="text-foreground">{cleanCandidateName(dossierCandidate.name)}</strong>.
-                          Veo and Imagen models recognize real-world venues and integrate your scene&apos;s lighting
+                          Omni Flash and Imagen models recognize real-world venues and integrate your scene&apos;s lighting
                           atmosphere.
                         </p>
                       </div>

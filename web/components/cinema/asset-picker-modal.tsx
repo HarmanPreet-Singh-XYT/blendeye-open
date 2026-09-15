@@ -470,7 +470,7 @@ export function AssetPickerModal({
                   {isUploading ? "Uploading to Production Storage..." : "Drag and drop your file here"}
                 </p>
                 <p className="text-xs text-muted-foreground max-w-sm">
-                  Supports architectural building blueprints, top-level maps, actor headshots, concept plates, Veo takes (MP4, PNG, JPG, WEBP, SVG).
+                  Supports architectural building blueprints, top-level maps, actor headshots, concept plates, video takes (MP4, PNG, JPG, WEBP, SVG).
                 </p>
               </div>
 

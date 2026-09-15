@@ -66,7 +66,7 @@ export interface AssetHubDialogProps {
   projectId?: string;
   projectTitle?: string;
   onSetFloorPlanMap?: (mapUrl: string, asset: CinemaAsset) => void;
-  onSendToVeo?: (imageUrl: string, asset: CinemaAsset) => void;
+  onSendToVideo?: (imageUrl: string, asset: CinemaAsset) => void;
   onSetCharacterFace?: (imageUrl: string, asset: CinemaAsset) => void;
   onAddToSceneScout?: (imageUrl: string, asset: CinemaAsset) => void;
   onInsertToTimeline?: (mediaUrl: string, asset: CinemaAsset) => void;
@@ -79,7 +79,7 @@ export function AssetHubDialog({
   projectId,
   projectTitle,
   onSetFloorPlanMap,
-  onSendToVeo,
+  onSendToVideo,
   onSetCharacterFace,
   onAddToSceneScout,
   onInsertToTimeline,
@@ -374,7 +374,7 @@ export function AssetHubDialog({
                 <span>Ready for Generative AI</span>
               </div>
               <p className="text-[10px] text-muted-foreground leading-tight">
-                Linked to Veo 3.1, 2D Floor Plan, Scene Scout, and Talent Vault.
+                Linked to Omni Flash, 2D Floor Plan, Scene Scout, and Talent Vault.
               </p>
             </div>
           </div>
@@ -534,20 +534,20 @@ export function AssetHubDialog({
                                   </DropdownMenuItem>
                                 )}
 
-                                {onSendToVeo && (
+                                {onSendToVideo && (
                                   <DropdownMenuItem
                                     onClick={() => {
-                                      onSendToVeo(asset.url, asset);
+                                      onSendToVideo(asset.url, asset);
                                       toast.add({
-                                        title: "Conditioning Google Veo",
-                                        description: `"${asset.name}" sent to Veo motion synthesizer.`,
+                                        title: "Conditioning the render",
+                                        description: `"${asset.name}" sent to the video motion synthesizer.`,
                                         type: "success",
                                       });
                                     }}
                                     className="text-xs gap-2 cursor-pointer"
                                   >
                                     <Film className="h-3.5 w-3.5 text-purple-400" />
-                                    <span>Pre-viz in Google Veo 3.1</span>
+                                    <span>Pre-viz in Gemini Omni Flash</span>
                                   </DropdownMenuItem>
                                 )}
 

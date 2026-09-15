@@ -1,8 +1,9 @@
 """Prompt sanitizer to protect video and image generation from Google RAI filters.
 
-Google Veo 3.1 and Imagen 3 / Gemini Image have strict Responsible AI (RAI) filters
-that automatically block or silently discard generations mentioning real living people,
-celebrities, famous actors, or explicit 'likeness of / resembling [Actor]' phrases.
+Gemini Omni Flash and Imagen 3 / Gemini Image have strict Responsible AI (RAI)
+filters that automatically block or silently discard generations mentioning real
+living people, celebrities, famous actors, or explicit 'likeness of / resembling
+[Actor]' phrases.
 
 This module provides robust sanitization to strip or convert celebrity actor comps
 and real-person likeness references into generic, evocative cinematic visual descriptors.
@@ -92,8 +93,8 @@ _LIKENESS_PATTERNS = [
 ]
 
 
-def sanitize_veo_prompt(prompt: str, character_name: str | None = None) -> str:
-    """Sanitize prompt text and character name before dispatching to Google Veo 3.1.
+def sanitize_video_prompt(prompt: str, character_name: str | None = None) -> str:
+    """Sanitize prompt text and character name before dispatching to video generation.
 
     Removes any celebrity names, actor likeness statements, or comp phrasing that
     would trigger Google's Responsible-AI (RAI) filters on real person generation.
@@ -126,8 +127,8 @@ def sanitize_veo_prompt(prompt: str, character_name: str | None = None) -> str:
     return sanitized
 
 
-def sanitize_character_name_for_veo(name: str | None) -> str | None:
-    """Ensure a character's name itself isn't a celebrity name before passing to Veo."""
+def sanitize_character_name(name: str | None) -> str | None:
+    """Ensure a character's name itself isn't a celebrity name before passing to the model."""
     if not name:
         return None
     cleaned = _CELEB_PATTERN.sub("", name).strip()

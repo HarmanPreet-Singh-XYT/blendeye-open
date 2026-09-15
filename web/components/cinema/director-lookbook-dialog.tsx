@@ -242,7 +242,7 @@ export function DirectorLookbookDialog({
             <div className="flex items-center gap-2.5">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
               <span className="text-muted-foreground font-mono">
-                Verified: Dialogue stems, ClickHouse knowledge states, and Veo 3.1 video manifests compiled.
+                Verified: Dialogue stems, ClickHouse knowledge states, and Omni Flash video manifests compiled.
               </span>
             </div>
             <Badge variant="outline" className="border-border font-mono text-[10px]">

@@ -45,7 +45,7 @@ import { VersionControlDialog } from "@/components/cinema/version-control-dialog
 import { AICommanderDialog } from "@/components/cinema/ai-commander-dialog";
 import { ClickHouseToolboxDialog } from "@/components/cinema/clickhouse-toolbox-dialog";
 import { AudioStudioView } from "@/components/cinema/audio-studio-view";
-import { VeoVideoDialog } from "@/components/cinema/veo-video-dialog";
+import { VideoGenerationDialog } from "@/components/cinema/video-generation-dialog";
 import { GenerationStudioView } from "@/components/cinema/generation-studio-view";
 import { LocationDossierDialog } from "@/components/cinema/location-dossier-dialog";
 import { DirectorLookbookDialog } from "@/components/cinema/director-lookbook-dialog";
@@ -542,8 +542,8 @@ function StudioWorkspace() {
   const [showTableRead, setShowTableRead] = React.useState(false);
   const [versionControlOpen, setVersionControlOpen] = React.useState(false);
   const [clickhouseToolboxOpen, setClickhouseToolboxOpen] = React.useState(false);
-  const [veoVideoOpen, setVeoVideoOpen] = React.useState(false);
-  const [veoCharacterContext, setVeoCharacterContext] = React.useState<ProjectCharacter | null>(null);
+  const [videoGenOpen, setVideoGenOpen] = React.useState(false);
+  const [videoCharacterContext, setVideoCharacterContext] = React.useState<ProjectCharacter | null>(null);
   const [lookbookOpen, setLookbookOpen] = React.useState(false);
   const [characterLabOpen, setCharacterLabOpen] = React.useState(false);
   const [scratchpadOpen, setScratchpadOpen] = React.useState(false);
@@ -570,7 +570,7 @@ function StudioWorkspace() {
   const [stagedCameraMotion, setStagedCameraMotion] = React.useState<string>("");
   const [stagedPromptNote, setStagedPromptNote] = React.useState<string>("");
 
-  const handleSendStagingToVeo = React.useCallback(
+  const handleSendStagingToVideo = React.useCallback(
     (camData: { camName: string; lens: string; motion: string; promptNote: string }) => {
       setStagedCameraMotion(camData.motion);
       setStagedPromptNote(camData.promptNote);
@@ -2623,7 +2623,7 @@ function StudioWorkspace() {
                   ? "bg-accent text-accent-foreground shadow-xs"
                   : "text-muted-foreground hover:bg-secondary hover:text-foreground"
               )}
-              title="AI Media Generation: Google Veo 3.1 & Pre-viz Reels (Shift+3)"
+              title="AI Media Generation: Gemini Omni Flash & Pre-viz Reels (Shift+3)"
             >
               <Sparkles className="h-3.5 w-3.5" />
               <span>Generation</span>
@@ -3228,7 +3228,7 @@ function StudioWorkspace() {
                       ),
                     });
                   }}
-                  onSendToVeo={handleSendStagingToVeo}
+                  onSendToVideo={handleSendStagingToVideo}
                 />
               )}
               {deckSubTab === "location" && (() => {
@@ -3361,10 +3361,10 @@ function StudioWorkspace() {
                   type="button"
                   onClick={() => setMainTab("generation")}
                   className="flex items-center gap-1.5 text-xs text-amber-300 hover:text-amber-200 px-2.5 py-1 rounded-md border border-amber-500/30 bg-amber-500/10 cursor-pointer transition-colors"
-                  title="Switch to Veo Media Generation (Shift+3)"
+                  title="Switch to Omni Flash Media Generation (Shift+3)"
                 >
                   <Film className="h-3.5 w-3.5" />
-                  <span>Veo Generation ↗</span>
+                  <span>Video Generation ↗</span>
                 </button>
               </div>
             </div>
@@ -3376,7 +3376,7 @@ function StudioWorkspace() {
                   characters={characters}
                   screenplayText={screenplayText}
                   sceneTitle={sceneTitle}
-                  onOpenVeoVideo={() => setMainTab("generation")}
+                  onOpenVideoGenerator={() => setMainTab("generation")}
                 />
               </div>
             )}
@@ -3518,7 +3518,7 @@ function StudioWorkspace() {
           </div>
         )}
 
-        {/* TAB 3: Google Veo 3.1 & Master Cinema Video Generator */}
+        {/* TAB 3: Gemini Omni Flash & Master Cinema Video Generator */}
         {mainTab === "generation" && (
           <GenerationStudioView
             projectId={projectId}
@@ -3704,10 +3704,10 @@ function StudioWorkspace() {
           setMainTab("simulation");
           setSimulationTab("hotseat");
         }}
-        onSendToVeo={(char) => {
-          setVeoCharacterContext(char);
+        onSendToVideo={(char) => {
+          setVideoCharacterContext(char);
           setCharacterLabOpen(false);
-          setVeoVideoOpen(true);
+          setVideoGenOpen(true);
         }}
       />
 
@@ -3770,12 +3770,12 @@ function StudioWorkspace() {
             type: "success",
           });
         }}
-        onSendToVeo={(_imageUrl, asset) => {
-          setVeoVideoOpen(true);
+        onSendToVideo={(_imageUrl, asset) => {
+          setVideoGenOpen(true);
           setAssetHubOpen(false);
           toast.add({
-            title: "Veo 3.1 Pre-viz",
-            description: `Conditioning Veo with "${asset.name}".`,
+            title: "Omni Flash Pre-viz",
+            description: `Conditioning the render with "${asset.name}".`,
             type: "success",
           });
         }}
@@ -3859,13 +3859,13 @@ function StudioWorkspace() {
         queryLogs={queryLogs}
       />
 
-      {/* Google Veo 3.1 Cinema Video Generation Modal */}
-      <VeoVideoDialog
-        open={veoVideoOpen}
+      {/* Gemini Omni Flash Cinema Video Generation Modal */}
+      <VideoGenerationDialog
+        open={videoGenOpen}
         onOpenChange={(isOpen) => {
-          setVeoVideoOpen(isOpen);
+          setVideoGenOpen(isOpen);
           if (!isOpen) {
-            setVeoCharacterContext(null);
+            setVideoCharacterContext(null);
           }
         }}
         projectId={projectId}
@@ -3892,14 +3892,14 @@ function StudioWorkspace() {
         screenplayText={screenplayText}
         genre={genre}
         characters={characters}
-        characterContext={veoCharacterContext || undefined}
+        characterContext={videoCharacterContext || undefined}
         activeCharacterName={activeCharacterName}
         visualPrompt={
-          veoCharacterContext
-            ? `Cinematic 16:9 take featuring ${veoCharacterContext.name}${
-                veoCharacterContext.wardrobe ? `, wearing ${veoCharacterContext.wardrobe}` : ""
+          videoCharacterContext
+            ? `Cinematic 16:9 take featuring ${videoCharacterContext.name}${
+                videoCharacterContext.wardrobe ? `, wearing ${videoCharacterContext.wardrobe}` : ""
               }. ${
-                veoCharacterContext.visualDescription || ""
+                videoCharacterContext.visualDescription || ""
               } in ${sceneTitle}. 35mm anamorphic scope.`
             : ((nodes.find((n) => n.type === "storyboard")?.data?.prompt as string) ||
               `Cinematic 16:9 widescreen establishing shot of ${sceneTitle}. Moody shadows, photoreal 35mm film.`)

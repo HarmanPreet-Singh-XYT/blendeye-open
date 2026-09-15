@@ -25,7 +25,7 @@ export async function GET() {
       clickhouse_events_sharded: 0,
       cinematic_precedents_rows: 0,
       pipeline_state: {
-        veo_video_sequencer: "unreachable",
+        omni_video_sequencer: "unreachable",
         clickhouse_timegate: "unreachable",
         gemini_agents: "unreachable",
         parallel_web_search: "unreachable",
@@ -63,7 +63,7 @@ export async function GET() {
         message: "ClickHouse time-gate queries consistently performing under 4ms target.",
       },
       {
-        name: "VeoQueueThroughput",
+        name: "OmniVideoQueueThroughput",
         state: "normal",
         severity: "info",
         message: "Sequential pixel-anchored video pipeline queue nominal.",

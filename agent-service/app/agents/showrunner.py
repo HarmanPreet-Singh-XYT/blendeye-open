@@ -70,7 +70,7 @@ def query_studio_telemetry(aspect: str = "all") -> str:
         f"Status: {status.get('status', 'unknown').upper()}\n"
         f"Engine: {status.get('observability_engine', 'Grafana Labs OpenTelemetry Stack')}\n\n"
         f"Pipeline Health:\n"
-        f"- Veo 3.1 Video Sequencer: {pipeline.get('veo_video_sequencer')}\n"
+        f"- Omni Flash Video Sequencer: {pipeline.get('omni_video_sequencer')}\n"
         f"- ClickHouse Time-Gate: {pipeline.get('clickhouse_timegate')}\n"
         f"- Gemini Agents: {pipeline.get('gemini_agents')}\n"
         f"- Parallel Web Search: {pipeline.get('parallel_web_search')}\n"

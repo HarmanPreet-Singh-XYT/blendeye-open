@@ -50,16 +50,16 @@ HTTP_AGENTIC_DURATION_SECONDS = Histogram(
     buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0],
 )
 
-# 2. Google Veo 3.1 & Video Sequencer Pipeline
-VEO_VIDEO_RENDERS_TOTAL = Counter(
-    "blendeye_veo_video_renders_total",
-    "Total Google Veo 3.1 video generation tasks dispatched",
+# 2. Gemini Omni Flash & Video Sequencer Pipeline
+OMNI_VIDEO_RENDERS_TOTAL = Counter(
+    "blendeye_omni_video_renders_total",
+    "Total Gemini Omni Flash video generation tasks dispatched",
     ["aspect_ratio", "status"],
 )
 
-VEO_GENERATION_SECONDS = Histogram(
-    "blendeye_veo_generation_seconds",
-    "Google Veo 3.1 video rendering latency in seconds",
+OMNI_GENERATION_SECONDS = Histogram(
+    "blendeye_omni_generation_seconds",
+    "Gemini Omni Flash video rendering latency in seconds",
     ["shot_type"],
     buckets=[2.0, 5.0, 10.0, 20.0, 35.0, 60.0, 120.0],
 )
@@ -291,7 +291,7 @@ def get_studio_health_status() -> dict[str, Any]:
         clickhouse_status = "error"
 
     pipeline = {
-        "veo_video_sequencer": "configured" if settings.google_api_key else "unconfigured (no GOOGLE_API_KEY)",
+        "omni_video_sequencer": "configured" if settings.google_api_key else "unconfigured (no GOOGLE_API_KEY)",
         "clickhouse_timegate": clickhouse_status,
         "gemini_agents": "configured" if settings.google_api_key else "unconfigured (no GOOGLE_API_KEY)",
         "parallel_web_search": "configured" if settings.parallel_api_key else "unconfigured (no PARALLEL_API_KEY)",
@@ -390,8 +390,8 @@ def map_endpoint_to_agentic(path: str) -> dict[str, str]:
         }
     if clean_path.startswith(("/video-sequence", "/media/video")):
         return {
-            "agentic_use": "video_sequencer_veo",
-            "label": "Google Veo 3.1 Video Sequencer",
+            "agentic_use": "video_sequencer_omni",
+            "label": "Gemini Omni Flash Video Sequencer",
             "category": "Generative Media",
         }
     if clean_path.startswith("/media/tts"):
@@ -507,7 +507,7 @@ _AGENTIC_CATALOG: list[dict[str, Any]] = [
     {"agentic_use": "showrunner_copilot", "label": "Writers' Room Showrunner", "category": "Creative Development"},
     {"agentic_use": "location_scouting", "label": "Location Scout & Precedent Researcher", "category": "Research & Grounding"},
     {"agentic_use": "continuity_supervisor", "label": "Script Continuity Supervisor", "category": "Quality & Continuity"},
-    {"agentic_use": "video_sequencer_veo", "label": "Google Veo 3.1 Video Sequencer", "category": "Generative Media"},
+    {"agentic_use": "video_sequencer_omni", "label": "Gemini Omni Flash Video Sequencer", "category": "Generative Media"},
     {"agentic_use": "storyboard_artist_imagen", "label": "Imagen 3 Storyboard Artist", "category": "Generative Media"},
     {"agentic_use": "audio_dialogue_tts", "label": "Gemini 3.1 Flash Multi-Speaker TTS", "category": "Generative Media"},
     {"agentic_use": "cinematic_music_composer", "label": "Lyria Film Score Composer", "category": "Generative Media"},

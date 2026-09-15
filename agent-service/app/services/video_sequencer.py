@@ -1,10 +1,11 @@
-"""Runs a chained sequence of Veo shots to cover a scene duration longer than
-a single Veo call's 4-8s ceiling.
+"""Runs a chained sequence of Gemini Omni Flash shots to cover a scene
+duration longer than a single Omni clip's 3-10s ceiling.
 
 Continuity across shots is enforced two ways:
   1. Pixel anchoring — the last frame of shot N is extracted and passed as
-     the image-conditioning input for shot N+1, so lighting/character/framing
-     drift is constrained by an actual reference image, not just text.
+     the `<FIRST_FRAME>` conditioning image for shot N+1, so lighting/
+     character/framing drift is constrained by an actual reference image,
+     not just text.
   2. A locked continuity_bible per shot (produced upfront by the shotlist
      planner, see routers/shotlist.py) — each shot's prompt is built fresh
      from this fixed structured spec, never from an accumulating log of
@@ -15,7 +16,7 @@ Continuity across shots is enforced two ways:
 This runs as a plain in-memory background asyncio task (this service is
 otherwise stateless — see runner.py's docstring — so a process restart
 loses in-flight jobs; that's an acceptable tradeoff for a demo-scope
-feature and mirrors how Veo operations themselves are already not
+feature and mirrors how the Omni interactions themselves are already not
 persisted anywhere durable).
 """
 
@@ -32,21 +33,24 @@ from google import genai
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.routers.media import dispatch_veo_generation, poll_veo_operation
+from app.routers.media import (
+    build_video_input,
+    resolve_image_bytes,
+    run_omni_video_interaction,
+)
 from app.services.frame_extractor import FrameExtractionError, extract_last_frame
-from app.services.observability import VEO_GENERATION_SECONDS, VEO_VIDEO_RENDERS_TOTAL
-from app.services.prompt_sanitizer import sanitize_veo_prompt
+from app.services.observability import OMNI_GENERATION_SECONDS, OMNI_VIDEO_RENDERS_TOTAL
+from app.services.prompt_sanitizer import sanitize_video_prompt
 
 logger = logging.getLogger(__name__)
 
 _WEB_PUBLIC_DIR = Path(__file__).resolve().parent.parent.parent.parent / "web" / "public"
 
-# Server-side polling: cadence and ceiling per shot. Client no longer owns
-# the timeout — a 10-shot chain at up to 6 min/shot would blow past any
-# sane client-side setInterval budget, which is what forced this to move
-# server-side in the first place.
-_POLL_INTERVAL_SEC = 4
-_MAX_POLL_ATTEMPTS_PER_SHOT = 90  # ~6 minutes/shot ceiling
+# Per-shot ceiling. Omni renders synchronously, so instead of polling an
+# operation this bounds each shot's interaction call. A 10-shot chain at up to
+# ~6 min/shot would blow past any sane client-side timeout budget, which is why
+# the whole chain runs server-side.
+_SHOT_TIMEOUT_SEC = 360
 
 
 class SequenceShotInput(BaseModel):
@@ -132,16 +136,16 @@ def get_job(job_id: str) -> SequenceJob | None:
 
 
 def _build_shot_prompt(shot: SequenceShotInput) -> str:
-    """Builds the per-shot Veo prompt from ONLY the fixed continuity bible and
+    """Builds the per-shot Omni prompt from ONLY the fixed continuity bible and
     this shot's own beat — deliberately not from any prior shot's prompt or
     generation history, so drift can't compound across the chain.
     """
     bible = shot.continuity_bible or {}
-    clean_base_prompt = sanitize_veo_prompt(shot.prompt.strip().rstrip("."))
+    clean_base_prompt = sanitize_video_prompt(shot.prompt.strip().rstrip("."))
     parts = [clean_base_prompt]
 
     if bible.get("character_appearance"):
-        clean_appearance = sanitize_veo_prompt(bible["character_appearance"])
+        clean_appearance = sanitize_video_prompt(bible["character_appearance"])
         if clean_appearance:
             parts.append(f"Characters look exactly like: {clean_appearance}")
     if bible.get("wardrobe"):
@@ -157,7 +161,30 @@ def _build_shot_prompt(shot: SequenceShotInput) -> str:
     if bible.get("blocking_end"):
         parts.append(f"Shot ends with: {bible['blocking_end']}")
 
-    return sanitize_veo_prompt(". ".join(parts) + ".")
+    # Omni takes clip length from the prompt — there is no duration parameter —
+    # so the planner's per-shot budget is expressed as natural-language timing.
+    planned_duration = max(3, min(10, shot.estimated_duration_sec))
+    parts.append(f"A single continuous shot lasting about {planned_duration} seconds")
+
+    return sanitize_video_prompt(". ".join(parts) + ".")
+
+
+def _conditioning_tag(conditioning_source: str, has_image: bool) -> str:
+    """Binds the attached image to the role Omni should play it in.
+
+    Omni treats an untagged image as a loose reference, which is not enough to
+    keep a chain visually locked: a previous shot's last frame has to be the
+    literal starting frame, while a character/location plate is a subject
+    reference that must *not* become the first frame.
+    """
+    if not has_image:
+        return ""
+    if conditioning_source.strip().lower() in ("character_ref", "location_ref"):
+        return (
+            "Use <IMAGE_REF_0> only as a reference for the subject; "
+            "do not use it as the literal first frame. "
+        )
+    return "<FIRST_FRAME> "
 
 
 def _resolve_conditioning_image_url(
@@ -237,60 +264,40 @@ async def _run_sequence(
             previous_frame_bytes=previous_frame_bytes,
             reference_images=reference_images,
         )
+        images: list[tuple[bytes, str]] = []
+        if image_url:
+            raw, mime = resolve_image_bytes(image_url)
+            if raw:
+                images.append((raw, mime or "image/jpeg"))
+        prompt = _conditioning_tag(shot.conditioning_source or "previous_frame", bool(images)) + prompt
 
         shot_start_time = time.time()
         shot_type = "chained_continuation" if idx > 0 else "opening_shot"
 
         try:
-            operation_name = dispatch_veo_generation(
-                client,
-                prompt=prompt,
-                duration_seconds=shot.estimated_duration_sec,
-                image_url=image_url,
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    run_omni_video_interaction,
+                    client,
+                    input_payload=build_video_input(prompt, images),
+                    aspect_ratio="16:9",
+                ),
+                timeout=_SHOT_TIMEOUT_SEC,
             )
         except Exception as e:  # noqa: BLE001
-            logger.error("Sequence job %s shot %d dispatch failed: %s", job_id, shot.shot_number, e)
+            logger.error("Sequence job %s shot %d failed: %s", job_id, shot.shot_number, e)
+            OMNI_VIDEO_RENDERS_TOTAL.labels(aspect_ratio="16:9", status="error").inc()
+            OMNI_GENERATION_SECONDS.labels(shot_type=shot_type).observe(time.time() - shot_start_time)
             shot_state.status = "error"
             shot_state.error_message = str(e)
             job.status = "error"
-            job.error_message = f"Shot {shot.shot_number} failed to dispatch: {e}"
+            job.error_message = f"Shot {shot.shot_number} failed: {e}"
             job.updated_at = time.time()
             return
 
-        video_url: str | None = None
-        for _ in range(_MAX_POLL_ATTEMPTS_PER_SHOT):
-            await asyncio.sleep(_POLL_INTERVAL_SEC)
-            try:
-                result = poll_veo_operation(client, operation_name)
-            except Exception as e:  # noqa: BLE001
-                logger.error("Sequence job %s shot %d poll error: %s", job_id, shot.shot_number, e)
-                continue
-
-            if result["status"] == "completed":
-                video_url = result["video_url"]
-                break
-            if result["status"] == "error":
-                VEO_VIDEO_RENDERS_TOTAL.labels(aspect_ratio="16:9", status="error").inc()
-                VEO_GENERATION_SECONDS.labels(shot_type=shot_type).observe(time.time() - shot_start_time)
-                shot_state.status = "error"
-                shot_state.error_message = result.get("error", "unknown Veo error")
-                job.status = "error"
-                job.error_message = f"Shot {shot.shot_number} failed: {shot_state.error_message}"
-                job.updated_at = time.time()
-                return
-
-        if not video_url:
-            VEO_VIDEO_RENDERS_TOTAL.labels(aspect_ratio="16:9", status="timeout").inc()
-            VEO_GENERATION_SECONDS.labels(shot_type=shot_type).observe(time.time() - shot_start_time)
-            shot_state.status = "error"
-            shot_state.error_message = "Timed out waiting for Veo render"
-            job.status = "error"
-            job.error_message = f"Shot {shot.shot_number} timed out"
-            job.updated_at = time.time()
-            return
-
-        VEO_VIDEO_RENDERS_TOTAL.labels(aspect_ratio="16:9", status="completed").inc()
-        VEO_GENERATION_SECONDS.labels(shot_type=shot_type).observe(time.time() - shot_start_time)
+        video_url: str | None = result["video_url"]
+        OMNI_VIDEO_RENDERS_TOTAL.labels(aspect_ratio="16:9", status="completed").inc()
+        OMNI_GENERATION_SECONDS.labels(shot_type=shot_type).observe(time.time() - shot_start_time)
         shot_state.status = "completed"
         shot_state.video_url = video_url
         job.updated_at = time.time()

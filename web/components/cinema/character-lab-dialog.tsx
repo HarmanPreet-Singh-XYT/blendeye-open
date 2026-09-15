@@ -61,7 +61,7 @@ interface CharacterLabDialogProps {
   characters: ProjectCharacter[];
   onUpdateCharacters: (characters: ProjectCharacter[]) => void;
   onOpenHotSeat?: (charName: string) => void;
-  onSendToVeo?: (character: ProjectCharacter) => void;
+  onSendToVideo?: (character: ProjectCharacter) => void;
   /** Which project's roster is being edited — shown so it's never ambiguous which production this affects. */
   projectTitle?: string;
 }
@@ -80,7 +80,7 @@ export function CharacterLabDialog({
   characters,
   onUpdateCharacters,
   onOpenHotSeat,
-  onSendToVeo,
+  onSendToVideo,
   projectTitle,
 }: CharacterLabDialogProps) {
   const [selectedCharIndex, setSelectedCharIndex] = React.useState(0);
@@ -639,16 +639,16 @@ export function CharacterLabDialog({
             </div>
 
             <div className="pt-3 border-t border-border/60 space-y-1.5">
-              {onSendToVeo && activeChar && (
+              {onSendToVideo && activeChar && (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => onSendToVeo(activeChar)}
+                  onClick={() => onSendToVideo(activeChar)}
                   className="w-full text-xs h-8 gap-1.5 border-purple-500/40 text-purple-300 hover:bg-purple-500/10 cursor-pointer"
-                  title="Condition Google Veo 3.1 with this character's look"
+                  title="Condition Gemini Omni Flash with this character's look"
                 >
                   <Video className="h-3.5 w-3.5 text-purple-400" />
-                  <span>Pre-viz in Veo</span>
+                  <span>Pre-viz in Omni Flash</span>
                 </Button>
               )}
 
@@ -699,16 +699,16 @@ export function CharacterLabDialog({
             {/* TAB 0: VISUAL LOOK & CONCEPT ART (Face + Full Body) */}
             {activeTab === "visual" && (
               <div className="space-y-4 animate-in fade-in-50 duration-150">
-                {/* Veo 3.1 Direct Pipeline Banner */}
+                {/* Omni Flash Direct Pipeline Banner */}
                 <div className="p-3.5 rounded-xl border border-purple-500/30 bg-purple-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
                       <Video className="h-4 w-4 text-purple-400" />
                       <span className="text-xs font-bold text-foreground">
-                        Google Veo 3.1 Visual Conditioning Deck
+                        Gemini Omni Flash Visual Conditioning Deck
                       </span>
                       <Badge variant="outline" className="text-[9px] border-purple-500/40 text-purple-300 font-mono py-0">
-                        Veo 3.1 Ready
+                        Omni Flash Ready
                       </Badge>
                     </div>
                     <p className="text-[11px] text-muted-foreground">
@@ -716,14 +716,14 @@ export function CharacterLabDialog({
                     </p>
                   </div>
 
-                  {onSendToVeo && (
+                  {onSendToVideo && (
                     <Button
                       size="sm"
-                      onClick={() => onSendToVeo(activeChar)}
+                      onClick={() => onSendToVideo(activeChar)}
                       className="text-xs h-8 gap-1.5 bg-purple-600 hover:bg-purple-500 text-white font-medium shrink-0 cursor-pointer shadow-md"
                     >
                       <Film className="h-3.5 w-3.5" />
-                      <span>Pre-viz in Google Veo 3.1</span>
+                      <span>Pre-viz in Gemini Omni Flash</span>
                     </Button>
                   )}
                 </div>
@@ -1016,12 +1016,12 @@ export function CharacterLabDialog({
                   </div>
                 </div>
 
-                {/* Veo 3.1 Live Prompt Preview Card */}
+                {/* Omni Flash Live Prompt Preview Card */}
                 <div className="p-3.5 rounded-xl border border-border/80 bg-secondary/15 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-foreground font-mono uppercase tracking-wider flex items-center gap-1.5">
                       <Film className="h-3.5 w-3.5 text-purple-400" />
-                      Google Veo 3.1 Prompt Conditioning Synthesis
+                      Gemini Omni Flash Prompt Conditioning Synthesis
                     </span>
                     <span className="text-[10px] font-mono text-purple-300">Live Camera Injector</span>
                   </div>

@@ -78,7 +78,7 @@ interface SceneScoreViewProps {
   genre?: string;
   projectTitle?: string;
   nodes?: Node[];
-  /** Project-level video takes (from Veo 3.1 generation) for Video Sync mode */
+  /** Project-level video takes (from Omni Flash generation) for Video Sync mode */
   videoTakes?: import("@/lib/project-store").VideoTake[];
 }
 
@@ -148,7 +148,7 @@ export function SceneScoreView({
   // Music configuration state
   const [scoreType, setScoreType] = React.useState<"score" | "source" | "vocal">("score");
   const [mediaDeliveryMode, setMediaDeliveryMode] = React.useState<"audio_only" | "sync_video">("audio_only");
-  const videoClipDuration = 6; // Typical Veo 3.1 video take duration (5-8s)
+  const videoClipDuration = 6; // Typical Omni Flash video take duration (5-8s)
   const sceneCutDuration = activeScene?.durationSeconds || 30;
   const [durationSeconds, setDurationSeconds] = React.useState<number>(30);
   const [durationMode, setDurationMode] = React.useState<"clip" | "pro">("clip");
@@ -283,7 +283,7 @@ export function SceneScoreView({
   const [isMuted, setIsMuted] = React.useState<boolean>(false);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
-  // Dual-Track Synced Playback with Veo Video
+  // Dual-Track Synced Playback with the video take
   const [syncWithVideo, setSyncWithVideo] = React.useState<boolean>(true);
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const [videoBalance, setVideoBalance] = React.useState<number>(0.5); // 0 = Video only, 1 = Score only
@@ -950,7 +950,7 @@ export function SceneScoreView({
                       </div>
                       <div className="min-w-0">
                         <div className="text-xs font-heading">Include Video Clip</div>
-                        <div className="text-[10px] text-muted-foreground truncate">Sync with Veo 3.1 visual take</div>
+                        <div className="text-[10px] text-muted-foreground truncate">Sync with Omni Flash visual take</div>
                       </div>
                     </button>
                   </div>
@@ -1799,7 +1799,7 @@ export function SceneScoreView({
                       </div>
                     ) : (
                       <div className="rounded-lg border border-dashed border-border/60 p-3 text-center text-[11px] text-muted-foreground">
-                        No video takes yet. Generate a video in the Veo 3.1 studio — it will appear here for sync.
+                        No video takes yet. Generate a video in the Omni Flash studio — it will appear here for sync.
                       </div>
                     )}
                   </div>

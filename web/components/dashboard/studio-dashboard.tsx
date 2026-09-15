@@ -939,7 +939,7 @@ export function StudioDashboard() {
                 </div>
                 <h3 className="font-heading text-lg font-bold text-foreground">Your studio slate is currently empty</h3>
                 <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                  Start an autonomous pre-production slate to write scenes, synthesize cast ensembles, scout real locations, and generate cinematic Veo video takes.
+                  Start an autonomous pre-production slate to write scenes, synthesize cast ensembles, scout real locations, and generate cinematic video takes.
                 </p>
                 <div className="flex flex-col sm:flex-row items-center gap-3 mt-6 w-full justify-center">
                   <Button

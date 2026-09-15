@@ -1,7 +1,7 @@
 """Tests for the in-memory sequence-job store's lifecycle bounds.
 
 `_JOBS` previously had no eviction at all, so a long-lived process accumulated
-every Veo sequence job it had ever run, and the asyncio task driving each chain
+every sequence job it had ever run, and the asyncio task driving each chain
 was created without a strong reference (Python only keeps a weak one, so a
 multi-minute chain could be garbage-collected mid-render).
 """
@@ -95,7 +95,7 @@ def test_start_sequence_job_holds_strong_task_reference():
         pending = list(video_sequencer._RUNNING_TASKS)
         assert len(pending) == 1, "the sequence task must be strongly referenced"
 
-        # Zero shots, so the run terminates immediately without any Veo call.
+        # Zero shots, so the run terminates immediately without any Omni call.
         await asyncio.gather(*pending, return_exceptions=True)
         # Let the done-callback's discard run.
         await asyncio.sleep(0)

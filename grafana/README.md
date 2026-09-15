@@ -8,7 +8,7 @@ The dashboard monitors all critical asynchronous and real-time studio pipelines:
 1. **Studio API Throughput**: Real-time request rate across script generation, media rendering, and chat agents (`blendeye_http_requests_total`).
 2. **ClickHouse Sub-Millisecond Time-Gate Latency**: Live gauge with 4ms SLO threshold (`blendeye_clickhouse_query_latency_ms`).
 3. **Active Sharded Story Events**: Real-time gauge of character knowledge tuples indexed in ClickHouse MergeTree tables.
-4. **Google Veo 3.1 Video Sequencer Performance**: Render duration histograms across single and multi-shot takes.
+4. **Gemini Omni Flash Video Sequencer Performance**: Render duration histograms across single and multi-shot takes.
 5. **OpenCV Pixel-Anchoring Latency**: Speed of last-frame conditioning extraction for sequential video chaining.
 6. **Gemini 3.1 Flash TTS Synthesis**: Multi-speaker voice generation duration with actor timbre mapping.
 7. **Parallel Web Systems Search Yield**: Live query count for filming locations and soundstage permits.

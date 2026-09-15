@@ -172,18 +172,18 @@ for this build.
 
 ---
 
-## Known limitation — chained multi-shot Veo generation has no inter-shot verification
+## Known limitation — chained multi-shot Omni Flash generation has no inter-shot verification
 
 The "Full Scene (Chained Shots)" feature (generation-studio-view.tsx, agent-service
-`video_sequencer.py`) covers scenes longer than Veo's native 4-8s ceiling by generating shots
+`video_sequencer.py`) covers scenes longer than Omni's native 3-10s ceiling by generating shots
 sequentially, extracting shot N's last frame via ffmpeg, and feeding it as image conditioning for
 shot N+1. This was verified live end-to-end (2-shot chain, confirmed the frame handoff visually —
 shot 2's opening frame matched shot 1's closing frame almost exactly).
 
 **The gap:** there is no check that a completed shot actually matches its continuity bible
 (character appearance, wardrobe, location, lighting) before that shot's last frame is locked in as
-the anchor for the next shot. If Veo drifts on shot N (wrong wardrobe, wrong location, character
-facing the wrong way — Veo does this), the sequencer has no way to detect it — it just propagates
+the anchor for the next shot. If the model drifts on shot N (wrong wardrobe, wrong location, character
+facing the wrong way — the model does this), the sequencer has no way to detect it — it just propagates
 the drifted frame forward, so one bad shot silently corrupts every shot after it in the chain. You'd
 only find out by watching the final assembled sequence.
 
@@ -191,10 +191,10 @@ Deliberately not fixed before the demo (time tradeoff) — noting the fix here s
 
 - After extracting shot N's last frame and before dispatching shot N+1, run one cheap Gemini vision
   call: frame + bible fields in, strict pass/fail + reason out.
-- On fail: retry shot N once with the same prompt (Veo is stochastic, often just works), then if the
+- On fail: retry shot N once with the same prompt (the model is stochastic, often just works), then if the
   retry also fails, halt the job and surface it in the UI (`Shot` gets a `continuityCheck` field)
   rather than silently continuing on a corrupted anchor.
-- Cost is one extra Gemini call per shot boundary — small relative to a Veo render, shouldn't
+- Cost is one extra Gemini call per shot boundary — small relative to a video render, shouldn't
   meaningfully slow the chain.
 
 If this comes up in Q&A during the demo: frame as a known, intentionally-scoped-out reliability gap

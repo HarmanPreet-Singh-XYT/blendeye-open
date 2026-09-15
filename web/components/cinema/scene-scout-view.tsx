@@ -59,7 +59,7 @@ export interface SceneScoutViewProps {
   activeSceneId?: string;
   onSelectScene?: (sceneId: string) => void;
   onUpdateScene?: (updatedScene: FilmScene) => void;
-  onLinkToVeo?: (imageUrl: string, promptInfo: string) => void;
+  onLinkToVideo?: (imageUrl: string, promptInfo: string) => void;
   currency?: SupportedCurrency;
 }
 
@@ -69,7 +69,7 @@ export function SceneScoutView({
   activeSceneId,
   onSelectScene,
   onUpdateScene,
-  onLinkToVeo,
+  onLinkToVideo,
   currency = "USD",
 }: SceneScoutViewProps) {
   // Current Active Scene
@@ -386,12 +386,12 @@ export function SceneScoutView({
     });
   };
 
-  // Link to Veo for Video Reference Conditioning
-  const handleLinkToVeo = (imgUrl: string, promptText: string) => {
-    if (onLinkToVeo) {
-      onLinkToVeo(imgUrl, promptText);
+  // Link to the video generator for reference conditioning
+  const handleLinkToVideo = (imgUrl: string, promptText: string) => {
+    if (onLinkToVideo) {
+      onLinkToVideo(imgUrl, promptText);
       toast.add({
-        title: "🎬 Linked to Google Veo 3.1",
+        title: "🎬 Linked to Gemini Omni Flash",
         description: "Scene image set as reference conditioning for cinematic video generation.",
         type: "success",
       });
@@ -510,15 +510,15 @@ export function SceneScoutView({
             {/* Quick Action Control Bar under the Hero Monitor */}
             <div className="w-full max-w-4xl mt-3 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                {/* PRIMARY CTA: LINK TO VEO FOR VIDEO REFERENCE */}
+                {/* PRIMARY CTA: LINK AS VIDEO REFERENCE */}
                 <Button
                   size="sm"
-                  onClick={() => handleLinkToVeo(heroImage, heroPrompt || customPrompt)}
+                  onClick={() => handleLinkToVideo(heroImage, heroPrompt || customPrompt)}
                   className="h-8 gap-1.5 bg-purple-600 text-white hover:bg-purple-500 font-semibold cursor-pointer shadow-sm text-xs"
-                  title="Use this exact image to condition Google Veo 3.1 video generation"
+                  title="Use this exact image to condition Gemini Omni Flash video generation"
                 >
                   <Video className="h-3.5 w-3.5 text-purple-200" />
-                  <span>Link Image to Veo as Video Reference</span>
+                  <span>Link Image as Video Reference</span>
                 </Button>
 
                 {/* Set as Scene Master Keyframe */}
@@ -1132,13 +1132,13 @@ export function SceneScoutView({
                 size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleLinkToVeo(heroImage, heroPrompt || customPrompt);
+                  handleLinkToVideo(heroImage, heroPrompt || customPrompt);
                   setLightboxOpen(false);
                 }}
                 className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs gap-1.5"
               >
                 <Video className="h-3.5 w-3.5" />
-                <span>Link to Veo Video Reference</span>
+                <span>Link to Video Reference</span>
               </Button>
               <Button
                 size="sm"

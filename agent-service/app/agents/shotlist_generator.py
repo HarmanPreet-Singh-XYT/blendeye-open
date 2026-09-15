@@ -5,10 +5,10 @@ directs a complete, connected shot sequence: not just DP-style shot specs,
 but which character or location anchors each shot and how continuity should
 be carried across the cut.
 
-This also doubles as the shot planner for chained multi-shot Veo generation:
+This also doubles as the shot planner for chained multi-shot Omni generation:
 when a target total scene duration is supplied, the shot list is budgeted so
-the sum of estimated_duration_sec covers the full scene (Veo itself only
-renders 4-8s per call), and each shot carries a locked continuity_bible so
+the sum of estimated_duration_sec covers the full scene (Omni itself only
+renders 3-10s per call), and each shot carries a locked continuity_bible so
 the per-shot video prompt used later never has to re-derive character/
 location continuity from a growing conversation history — it just reads
 this fixed structured spec plus whichever reference image the director

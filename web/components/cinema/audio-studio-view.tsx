@@ -35,7 +35,7 @@ interface AudioStudioViewProps {
   characters: ProjectCharacter[];
   screenplayText: string;
   sceneTitle: string;
-  onOpenVeoVideo?: () => void;
+  onOpenVideoGenerator?: () => void;
 }
 
 interface ChannelVoiceState {
@@ -83,7 +83,7 @@ export function AudioStudioView({
   characters,
   screenplayText,
   sceneTitle,
-  onOpenVeoVideo,
+  onOpenVideoGenerator,
 }: AudioStudioViewProps) {
   const [activeTab, setActiveTab] = React.useState<"tableread" | "cast" | "acoustics">("tableread");
 
@@ -793,16 +793,16 @@ export function AudioStudioView({
             </span>
           </Button>
 
-          {/* Jump to Veo Generation */}
-          {onOpenVeoVideo && (
+          {/* Jump to Video Generation */}
+          {onOpenVideoGenerator && (
             <Button
               size="sm"
               variant="outline"
-              onClick={onOpenVeoVideo}
+              onClick={onOpenVideoGenerator}
               className="h-8 text-xs gap-1.5 border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 cursor-pointer hidden md:flex"
             >
               <Film className="h-3.5 w-3.5" />
-              <span>Send Stems to Veo ↗</span>
+              <span>Send Stems to Video ↗</span>
             </Button>
           )}
         </div>

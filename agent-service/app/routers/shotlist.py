@@ -75,7 +75,7 @@ class ShotlistRequest(BaseModel):
     target_total_duration_sec: int | None = Field(
         default=None,
         description="If set, the shot list is budgeted so shot durations sum to roughly this total, "
-        "covering scenes longer than a single Veo call's 4-8s ceiling.",
+        "covering scenes longer than a single Omni clip's 3-10s ceiling.",
     )
     # Full studio context — previously only scene_text/characters (names only)
     # reached this agent, leaving camera style, character reference images,

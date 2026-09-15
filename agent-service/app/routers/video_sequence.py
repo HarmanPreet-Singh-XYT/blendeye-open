@@ -1,6 +1,6 @@
-"""Endpoints for chained multi-shot Veo generation — covers scenes longer
-than a single Veo call's 4-8s ceiling by dispatching shots sequentially,
-each conditioned on the previous shot's last frame. See
+"""Endpoints for chained multi-shot Gemini Omni Flash generation — covers
+scenes longer than a single Omni clip's 3-10s ceiling by rendering shots
+sequentially, each conditioned on the previous shot's last frame. See
 services/video_sequencer.py for the continuity design.
 """
 

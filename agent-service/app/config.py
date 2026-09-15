@@ -37,7 +37,13 @@ class Settings(BaseSettings):
     google_cloud_location: str = "us-central1"
     gemini_model: str = "gemini-3.7-flash"
 
-    # Supabase — used to persist Veo videos and generated media directly to cloud storage
+    # Gemini Omni Flash — the generative video surface (generation, conversational
+    # editing, and extension via the Interactions API). Resolution is one of
+    # 360p / 720p / 1080p / 4k; anything else falls back to 720p.
+    omni_video_model: str = "gemini-omni-1.1-flash"
+    omni_video_resolution: str = "720p"
+
+    # Supabase — used to persist rendered clips and generated media directly to cloud storage
     supabase_url: str = ""
     supabase_secret_key: str = ""
 

@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { getSupabaseAdminClient, getSupabaseClient, isSupabaseConfigured, getAuthUserFromHeader } from "@/lib/supabase";
 import { upsertAssetToSupabase, type CinemaAsset } from "@/lib/supabase-store";
+import { normalizeMediaUrl } from "@/lib/media-url";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
           if (!uploadError) {
             const { data: urlData } = client.storage.from("cinema_assets").getPublicUrl(storagePath);
             if (urlData?.publicUrl) {
-              publicUrl = urlData.publicUrl;
+              publicUrl = normalizeMediaUrl(urlData.publicUrl);
               uploadedToCloud = true;
             }
           } else {

@@ -19,7 +19,7 @@
 [![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)](https://www.python.org/)
 [![ClickHouse](https://img.shields.io/badge/ClickHouse-24+-yellow?logo=clickhouse)](https://clickhouse.com/)
 [![Google Cloud AI](https://img.shields.io/badge/Google_Cloud-Gemini_3.7_Flash-4285F4?logo=googlecloud)](https://cloud.google.com/vertex-ai)
-[![Veo 3.1](https://img.shields.io/badge/Google-Veo_3.1-FF5722)](https://deepmind.google/technologies/veo/)
+[![Gemini Omni Flash](https://img.shields.io/badge/Google-Gemini_Omni_Flash-4285F4)](https://deepmind.google/models/gemini-omni/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_%26_Storage-3ECF8E?logo=supabase)](https://supabase.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -47,7 +47,7 @@
      - [Dynamic Friction & Chemistry Bench](#2-dynamic-friction--chemistry-bench)
      - [Audio Table Read Studio & Voice Timbre Engine](#3-audio-table-read-studio--dsp-room-acoustics)
    - [Workspace 3: Generation Backlot (Shift+3)](#workspace-3-generation-backlot-shift3)
-     - [Google Veo 3.1 Sequential Chained Video Studio](#1-google-veo-31-sequential-chained-video-studio)
+     - [Gemini Omni Flash Sequential Chained Video Studio](#1-gemini-omni-flash-sequential-chained-video-studio)
      - [2.39:1 Anamorphic Storyboard & Concept Art](#2-2391-anamorphic-storyboard--concept-art)
      - [Director's Aesthetic Lookbook](#3-directors-aesthetic-lookbook)
      - [AI Scene Score & Soundtrack Synthesizer](#4-ai-scene-score--soundtrack-synthesizer)
@@ -77,7 +77,7 @@
 | Integration | Status | Where it runs |
 | :--- | :--- | :--- |
 | **Hosted, publicly reachable deployment** | ✅ Live | [blendeye.harmanita.com](https://blendeye.harmanita.com) |
-| **Google Cloud AI** | ✅ Active | `google-genai` + `google-adk` invoked across `app/routers/media.py`, `app/services/video_sequencer.py`, `app/agents/*.py` — runtime calls to `gemini-3.7-flash`, `gemini-3.1-flash-tts-preview`, and `veo-3.1-fast-generate-preview`. |
+| **Google Cloud AI** | ✅ Active | `google-genai` + `google-adk` invoked across `app/routers/media.py`, `app/services/video_sequencer.py`, `app/agents/*.py` — runtime calls to `gemini-3.7-flash`, `gemini-3.1-flash-tts-preview`, and `gemini-omni-1.1-flash`. |
 | **ClickHouse via `mcp-clickhouse`** | ✅ Active | `app/services/clickhouse_mcp.py` runs the official `mcp-clickhouse` server as an `McpToolset` on the live Showrunner agent (`app/agents/showrunner.py`) for commercial comps. |
 | **ClickHouse Cloud / self-hosted cluster** | ✅ Active | Production deployment connects to **ClickHouse Cloud** with sub-3ms query latencies. |
 | **Parallel Web Systems** | ✅ Active | Official `parallel-web` Python SDK (v1.3.3) invoked in `app/services/parallel_search.py`, `app/routers/location_research.py`, and `app/agents/showrunner.py` for real-time location scouting and market comps. |
@@ -99,7 +99,7 @@ Filmmaking, by contrast, has historically had no flight simulator. Directors ste
 **BlendEye replaces guesswork with simulation.** It gives directors a unified, interactive digital studio to:
 1. **Plan** the entire film: scenes, sluglines, shooting schedules, location dossiers, and international box-office targets.
 2. **Simulate** the dramatic reality before cameras roll: interrogate characters under strict **ClickHouse time-gated knowledge firewalls**, pit actors in unscripted chemistry pressure-cookers, test 2D spatial camera sightlines, and listen to theatrical multi-speaker audio table reads with physical room acoustics.
-3. **Generate & Direct** high-fidelity cinematic pre-viz: sequential multi-shot **Google Veo 3.1** video sequences with frame-accurate pixel anchoring, 2.39:1 anamorphic storyboards, original scene scores, and 3 distinct directorial takes per scene.
+3. **Generate & Direct** high-fidelity cinematic pre-viz: sequential multi-shot **Gemini Omni Flash** video sequences with frame-accurate pixel anchoring, 2.39:1 anamorphic storyboards, original scene scores, and 3 distinct directorial takes per scene.
 
 ---
 
@@ -122,7 +122,7 @@ Traditional pre-production is plagued by two fatal structural flaws:
 │                                                                                        │
 │     1. PLAN (The Blueprint)             2. SIMULATE (The Flight Sim)   3. DIRECT (The Set)     │
 │  ┌───────────────────────────┐       ┌──────────────────────────────┐  ┌────────────────────┐  │
-│  │ • Multi-Scene Sequencing  │       │ • ClickHouse Hot Seat        │  │ • Chained Veo 3.1  │  │
+│  │ • Multi-Scene Sequencing  │       │ • ClickHouse Hot Seat        │  │ • Chained Omni Flash  │  │
 │  │ • Visual Backlot Graph    │ ────► │ • Dynamic Chemistry Bench    │─►│ • Pixel Anchoring  │  │
 │  │ • Production Stripboard   │       │ • Multi-Speaker Audio Table  │  │ • 2.39:1 Stills    │  │
 │  │ • Parallel Web Scouting   │       │ • 2D Spatial Camera Blocking │  │ • AI Film Scoring  │  │
@@ -149,7 +149,7 @@ flowchart TB
         DirectorDeck["Director's Deck (Floor Plan, Curves, Heatmap)"]
         Inspector["ClickHouse Live Query Inspector"]
         AudioStudio["Audio Studio & DSP Visualizer"]
-        GenStudio["Veo Chained Video Sequencer Studio"]
+        GenStudio["Omni Chained Video Sequencer Studio"]
     end
 
     subgraph WebLayer ["Next.js Web Service (Port 3000)"]
@@ -170,7 +170,7 @@ flowchart TB
         Sharder["Perspective Sharder Agent (ADK)"]
         Interrogator["Hot Seat Interrogation Agent"]
         Showrunner["Showrunner Co-Writer (MCP-Enabled)"]
-        MediaGen["Media Engine (Veo 3.1, TTS, Imagen 3)"]
+        MediaGen["Media Engine (Omni Flash, TTS, Imagen 3)"]
         Sequencer["Video Sequencer (Pixel Anchored Chaining)"]
         FrameExtract["Frame Extractor (OpenCV / PIL)"]
     end
@@ -178,7 +178,7 @@ flowchart TB
     subgraph GoogleAI ["Google Cloud AI Platform"]
         GeminiFlash["Gemini 3.7 Flash (Reasoning & Agents)"]
         GeminiTTS["Gemini 3.1 Flash TTS (Multi-Speaker Audio)"]
-        VeoVideo["Veo 3.1 Fast Generate (Cinema Video)"]
+        OmniVideo["Omni Flash Generate (Cinema Video)"]
         Imagen3["Imagen 3 / Gemini Image Models"]
     end
 
@@ -224,7 +224,7 @@ BlendEye organizes the directorial workflow into four specialized studio workspa
 | :--- | :--- | :--- |
 | **Studio & Planning** | <kbd>Shift</kbd> + <kbd>1</kbd> | Visual node backlot, multi-scene timeline, stripboard, location scouting, 2D camera blocking, and pacing curves |
 | **Simulation Suite** | <kbd>Shift</kbd> + <kbd>2</kbd> | The Hot Seat (time-gated interrogation), unscripted character chemistry bench, and theatrical audio table reads |
-| **Generation Backlot** | <kbd>Shift</kbd> + <kbd>3</kbd> | Sequential chained Veo 3.1 video generation, 2.39:1 anamorphic storyboards, film scoring, and multiverse takes |
+| **Generation Backlot** | <kbd>Shift</kbd> + <kbd>3</kbd> | Sequential chained Omni Flash video generation, 2.39:1 anamorphic storyboards, film scoring, and multiverse takes |
 | **Showrunner AI** | <kbd>Shift</kbd> + <kbd>4</kbd> | Omniscient AI co-director grounded via `mcp-clickhouse` for commercial comps, subtext analysis, and full studio action automation |
 
 ---
@@ -269,7 +269,7 @@ The Director's central pre-production planning floor, linking high-level script 
 - **Overhead Stage Schematic**: Draggable actor tokens and camera positions on a customizable 2D floor plan map.
 - **Camera Lens Presets**: Switch between Wide Master (35mm), Over-The-Shoulder (50mm), Intimate Close-Up (85mm), and High Suspense POV (24mm).
 - **Sightlines & Practical Lighting**: Visualizes actor sightline vectors, camera coverage cones, and directional practical lighting beams.
-- **Direct Veo 3.1 Dispatch**: Send camera focal length, motion path (Pan, Track, Crane, Push-in), and staging notes straight into the Google Veo video generation prompt with one click.
+- **Direct Omni Flash Dispatch**: Send camera focal length, motion path (Pan, Track, Crane, Push-in), and staging notes straight into the video generation prompt with one click.
 
 #### 7. Dramatic Tension & Pacing Curve Visualizer
 - **Recharts 3-Act Tension Graph**: Continuous narrative tension visualizer plotting scene intensity against runtime seconds.
@@ -312,11 +312,12 @@ The Director's virtual rehearsal stage — test actors, dialogue, and dramatic f
 
 Transform director blocking and screenplay text into production-ready cinematic pre-viz assets.
 
-#### 1. Google Veo 3.1 Sequential Chained Video Studio
-- **Veo 3.1 Cinematic Video Generation**: Direct renders of high-definition 2.39:1 / 16:9 cinematic video clips conditioned on storyboard prompts, character reference art, and camera blocking parameters.
+#### 1. Gemini Omni Flash Sequential Chained Video Studio
+- **Omni Flash Cinematic Video Generation**: Direct renders of high-definition 16:9 / 9:16 cinematic video clips with synced audio, conditioned on text, storyboard prompts, character reference art, and camera blocking parameters. Output resolution is selectable (360p / 720p / 1080p / 4K); clip length (3–10s) is prompt-driven.
+- **Conversational Editing & Extension**: Each render returns an Omni interaction id, so the active take can be refined through natural-language instructions (`/media/video/edit`) — everything the instruction doesn't mention is preserved — or continued from its tail (`/media/video/extend`, append-only). Takes not rendered here (an uploaded clip) work too: the clip is uploaded through the model's Files API first, so it must be ≤10s, and editing/extending uploaded clips is unavailable in the EEA, Switzerland and the UK.
 - **Chained Multi-Shot Sequencer (`services/video_sequencer.py`)**:
-  - Overcomes the single-shot 4–8 second duration ceiling to generate continuous multi-shot scene sequences.
-  - **Pixel Anchoring (`frame_extractor.py`)**: Automatically extracts the exact last frame of Shot $N$ via OpenCV/PIL and feeds it into Veo 3.1 as the image-conditioning reference for Shot $N+1$, preventing visual drift and character appearance distortion.
+  - Overcomes the single-clip 3–10 second ceiling to generate continuous multi-shot scene sequences.
+  - **Pixel Anchoring (`frame_extractor.py`)**: Automatically extracts the exact last frame of Shot $N$ via OpenCV/PIL and feeds it into Omni Flash as the `<FIRST_FRAME>` conditioning image for Shot $N+1$, preventing visual drift and character appearance distortion.
   - **Locked Continuity Bibles**: Automatically generates rigid continuity bibles (wardrobe, key lighting angle, color palette, camera motion) across shot chains to prevent generative hallucination across long takes.
 
 #### 2. 2.39:1 Anamorphic Storyboard & Concept Art
@@ -374,7 +375,7 @@ The Director's autonomous executive partner — providing commercial market comp
 - **Global Talent Vault**: Persist characters globally in Supabase for reuse across different productions and franchise slates.
 
 #### 7. Production Asset Hub & Supabase Storage
-- **Media Asset Library**: Centralized asset manager for generated character portraits, storyboard stills, Veo video takes, floor plan schematics, and audio tracks.
+- **Media Asset Library**: Centralized asset manager for generated character portraits, storyboard stills, video takes, floor plan schematics, and audio tracks.
 - **Cloud Delivery**: Backed by Supabase Storage (`cinema_assets` public bucket) with CDN caching and metadata tagging.
 
 ---
@@ -502,7 +503,7 @@ BlendEye harnesses Google Cloud's multimodal model family:
 | :--- | :--- | :--- |
 | **Reasoning & Agents** | `gemini-3.7-flash` | Master screenplay authoring, perspective sharding, Hot Seat interrogation, Showrunner script doctoring, continuity checking, bridge scene generation, and studio action orchestration |
 | **Multi-Speaker TTS** | `gemini-3.1-flash-tts-preview` | Theatrical multi-speaker audio table reads with native `MultiSpeakerVoiceConfig`, actor timbres (`Fenrir`, `Aoede`, etc.), and DSP room acoustics |
-| **Video Generation** | `veo-3.1-fast-generate-preview` | 2.39:1 widescreen video renders, camera motion control, and sequential multi-shot chained generation with last-frame pixel conditioning |
+| **Video Generation** | `gemini-omni-1.1-flash` | 16:9 / 9:16 cinematic video renders with synced audio, selectable resolution, camera motion control, conversational editing + tail extension, and sequential multi-shot chained generation with last-frame pixel conditioning |
 | **Visual Concepts** | `gemini-3.1-flash-image` / `gemini-3-pro-image` | Anamorphic storyboard keyframes, character wardrobe portraits, and director lookbook moodboards |
 
 Location scouting grounding is powered by **Parallel Web Systems** (primary) — see the Parallel Web Systems Integration section — with ADK's native Google Search tool attached only as a fallback if Parallel is unconfigured or unreachable.
@@ -539,7 +540,7 @@ agentic_cinema/
 │   │   └── services/                  # ClickHouse store, MCP bridge, video sequencer
 │   │       ├── clickhouse_store.py    # Direct ClickHouse driver operations
 │   │       ├── clickhouse_mcp.py      # Official mcp-clickhouse server subprocess
-│   │       ├── video_sequencer.py     # Multi-shot chained Veo generation
+│   │       ├── video_sequencer.py     # Multi-shot chained Omni generation
 │   │       └── frame_extractor.py     # Last-frame pixel anchoring via OpenCV/PIL
 └── web/                               # Next.js 16 App Router (TypeScript + Tailwind v4)
     ├── package.json                   # Web dependencies (@xyflow/react, Lucide, Recharts)
@@ -558,7 +559,7 @@ agentic_cinema/
     │   │   ├── tension-curve-view.tsx # 3-act narrative tension curves
     │   │   ├── table-read-player.tsx  # Multi-speaker audio player with visualizer
     │   │   ├── territory-heatmap-view.tsx # Global box office D3 map
-    │   │   ├── generation-studio-view.tsx # Chained Veo video sequence view
+    │   │   ├── generation-studio-view.tsx # Chained Omni video sequence view
     │   │   ├── character-lab-dialog.tsx   # Character creator & talent vault
     │   │   ├── location-board.tsx         # Location scouting & comparison matrix
     │   │   ├── scene-score-view.tsx       # AI film score composer & takes
@@ -640,7 +641,7 @@ PARALLEL_API_KEY=your_parallel_api_key_here
 GRAFANA_URL=https://your-stack.grafana.net
 GRAFANA_SERVICE_ACCOUNT_TOKEN=your_grafana_service_account_token_here
 
-# Supabase Storage (Persists Veo 3.1 Videos & Generated Audio)
+# Supabase Storage (Persists Omni Flash Videos & Generated Audio)
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SECRET_KEY=your_supabase_secret_or_service_role_key
 
@@ -718,6 +719,16 @@ BlendEye keeps **exactly one copy of your work, in the cloud**.
   wizard and runs the normal generation + sharding pipeline into your own account.
 - **The one exception** is Supabase's own auth client session (stored under `sb-*-auth-token`),
   which is what keeps you signed in across a refresh. That is Supabase's storage, not app data.
+- **Media URLs never expire.** `cinema_assets` is a *public* bucket, so every stored object URL is
+  the permanent form — `…/storage/v1/object/public/cinema_assets/<path>` — which carries no
+  credential and needs no auth. The *signed* form (`…/object/sign/…?token=<jwt>`) embeds a
+  time-limited JWT; persisting one into a video take, keyframe, character portrait, score, or
+  floor plan would work in the session that created it and then silently 400 once the token
+  lapsed, looking like data loss. The app never calls `createSignedUrl`, and `lib/media-url.ts`
+  normalises every URL at the write boundary (and again on hydration) so one can never be stored
+  or served. `npm run check:media-url` asserts that invariant. Note the service-role and anon
+  keys are also JWTs that expire, but they only ever travel in request headers — never inside a
+  stored URL.
 
 ---
 
@@ -741,7 +752,7 @@ docker compose --profile full up --build
 ### Google Cloud AI Platform (Required)
 | Variable | Scope | Description | Default |
 | :--- | :--- | :--- | :--- |
-| `GOOGLE_API_KEY` | Agent Service / Web | Google Cloud GenAI API Key for Gemini & Veo models | *(Required)* |
+| `GOOGLE_API_KEY` | Agent Service / Web | Google Cloud GenAI API Key for Gemini & Omni models | *(Required)* |
 | `GEMINI_MODEL` | Agent Service | Primary reasoning agent model identifier | `gemini-3.7-flash` |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Agent Service | Set `true` to authenticate via Google Cloud Vertex AI | `false` |
 | `GOOGLE_CLOUD_PROJECT` | Agent Service | Google Cloud Project ID (when using Vertex AI) | *(Optional)* |
@@ -776,7 +787,7 @@ docker compose --profile full up --build
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Web App | Legacy alias for the publishable client key | *(Optional)* |
 | `SUPABASE_SECRET_KEY` | Web App / Agent Service | Supabase secret key / service role key for RLS bypass | *(Required for uploads & cache)* |
 | `SUPABASE_SERVICE_ROLE_KEY` | Web App | Legacy alias for the service role secret key | *(Optional)* |
-| `SUPABASE_URL` | Agent Service | Supabase project URL for persisting Veo videos to storage | *(Optional)* |
+| `SUPABASE_URL` | Agent Service | Supabase project URL for persisting rendered clips to storage | *(Optional)* |
 
 ### Networking & Runtime Environment
 | Variable | Scope | Description | Default |
@@ -820,7 +831,7 @@ BlendEye comes out of the box with curated benchmark productions ready for immed
 | :--- | :--- |
 | <kbd>Shift</kbd> + <kbd>1</kbd> | Switch to **Studio & Scene Planning** Workspace |
 | <kbd>Shift</kbd> + <kbd>2</kbd> | Switch to **Pre-Shoot Simulation Suite** |
-| <kbd>Shift</kbd> + <kbd>3</kbd> | Switch to **Generation Backlot** (Veo 3.1 & Pre-viz) |
+| <kbd>Shift</kbd> + <kbd>3</kbd> | Switch to **Generation Backlot** (Omni Flash & Pre-viz) |
 | <kbd>Shift</kbd> + <kbd>4</kbd> | Switch to **Showrunner AI Co-Pilot** |
 | <kbd>Shift</kbd> + <kbd>C</kbd> | Toggle **ClickHouse Live Query Inspector** & Telemetry |
 

@@ -1,5 +1,5 @@
 """Extracts the last frame of a rendered clip so it can be used as the
-image-conditioning input for the next chained Veo shot. This is the core
+image-conditioning input for the next chained shot. This is the core
 continuity mechanism for multi-shot scene generation: anchoring pixels
 (not just a text description) is far stronger than prompt-only continuity.
 """

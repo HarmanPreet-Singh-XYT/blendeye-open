@@ -2,6 +2,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { getSupabaseAdminClient, getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { upsertAssetToSupabase, type CinemaAsset } from "@/lib/supabase-store";
+import { normalizeMediaUrl } from "@/lib/media-url";
 
 export const CINEMA_ASSETS_BUCKET = "cinema_assets";
 
@@ -82,7 +83,9 @@ export async function uploadBufferToStorage(
     }
 
     const { data } = client.storage.from(CINEMA_ASSETS_BUCKET).getPublicUrl(storagePath);
-    return data?.publicUrl || null;
+    // getPublicUrl already yields the permanent form; normalising here keeps
+    // that true even if a future change swaps in a signed URL.
+    return data?.publicUrl ? normalizeMediaUrl(data.publicUrl) : null;
   } catch (err) {
     console.warn(`[MediaStorage] Storage exception for ${storagePath}:`, err);
     return null;
@@ -90,7 +93,7 @@ export async function uploadBufferToStorage(
 }
 
 /**
- * Ingests a local file (e.g. `/videos/veo_*.mp4` or `/audio/scores/*.mp3`),
+ * Ingests a local file (e.g. `/videos/omni_*.mp4` or `/audio/scores/*.mp3`),
  * uploads it to the Supabase bucket, and catalogs it into public.assets.
  */
 export async function persistLocalMediaToBucket(

@@ -358,7 +358,7 @@ export function synthesizeCinemaPrompt(options: SynthesisOptions): SynthesisResu
         ? (actorNodes[0].data as { actorName?: string; roleReference?: string; vocalWeight?: string })
         : null);
 
-    // For Veo/Imagen prompts, do NOT inject real actor names directly as they trip Responsible-AI
+    // For video/Imagen prompts, do NOT inject real actor names directly as they trip Responsible-AI
     // filters on real-person generation. Instead, synthesize dramatic facial presence and tone.
     const likenessComp = activeCharacter.archetype
       ? `facial presence embodying a ${activeCharacter.archetype.toLowerCase()}, sharp cinematic bone structure, intense focused gaze`

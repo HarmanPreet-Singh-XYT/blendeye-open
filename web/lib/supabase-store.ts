@@ -1,5 +1,54 @@
 import { getSupabaseClient, getSupabaseAdminClient, isSupabaseConfigured } from "@/lib/supabase";
 import type { ProjectData, ScratchpadNote } from "@/lib/project-store";
+import { normalizeMediaUrl } from "@/lib/media-url";
+
+/**
+ * Rewrites any signed/expiring Storage URL among a project's media fields back
+ * to the permanent public form.
+ *
+ * The write-path guards (see lib/media-url.ts) stop signed URLs being persisted
+ * from here on; this heals anything stored before them. A take, keyframe,
+ * portrait or floor plan saved with a since-lapsed token becomes loadable again
+ * instead of 400ing forever with what looks like data loss.
+ */
+function healProjectMediaUrls(p: ProjectData): ProjectData {
+  const url = (v: string | undefined): string | undefined => (v ? normalizeMediaUrl(v) : v);
+  const nullableUrl = (v: string | null | undefined): string | null | undefined =>
+    v ? normalizeMediaUrl(v) : v;
+
+  return {
+    ...p,
+    activeVideoUrl: url(p.activeVideoUrl),
+    activeScoreUrl: url(p.activeScoreUrl),
+    storyboardFrameUrl: url(p.storyboardFrameUrl),
+    floorPlanMapUrl: url(p.floorPlanMapUrl),
+    videoTakes: p.videoTakes?.map((t) => ({ ...t, videoUrl: url(t.videoUrl) ?? t.videoUrl })),
+    scoreTakes: p.scoreTakes?.map((t) => ({
+      ...t,
+      audioUrl: url(t.audioUrl) ?? t.audioUrl,
+      conditioningImageUrl: nullableUrl(t.conditioningImageUrl),
+      conditioningImageUrls: t.conditioningImageUrls?.map((u) => normalizeMediaUrl(u)),
+    })),
+    characters: p.characters?.map((c) => ({
+      ...c,
+      imageUrl: url(c.imageUrl),
+      fullBodyImageUrl: url(c.fullBodyImageUrl),
+    })),
+    scenes: p.scenes?.map((s) => ({
+      ...s,
+      activeVideoUrl: url(s.activeVideoUrl),
+      preview_image_url: url(s.preview_image_url),
+      floorPlanMapUrl: url(s.floorPlanMapUrl),
+      sceneImages: s.sceneImages?.map((img) => ({ ...img, url: normalizeMediaUrl(img.url) })),
+      videoTakes: s.videoTakes?.map((t) => ({ ...t, videoUrl: url(t.videoUrl) ?? t.videoUrl })),
+      scoreTakes: s.scoreTakes?.map((t) => ({ ...t, audioUrl: url(t.audioUrl) ?? t.audioUrl })),
+      locationCandidates: s.locationCandidates?.map((c) => ({
+        ...c,
+        preview_image_url: url(c.preview_image_url),
+      })),
+    })),
+  };
+}
 
 export function projectToRow(p: ProjectData, explicitUserId?: string | null) {
   // Bundle all multi-scene sequence and media data into initial_events JSONB column
@@ -55,7 +104,7 @@ export function rowToProject(r: any): ProjectData {
       ? r.initial_events
       : null;
 
-  return {
+  return healProjectMediaUrls({
     id: r.id,
     userId: r.user_id || undefined,
     title: r.title,
@@ -91,7 +140,7 @@ export function rowToProject(r: any): ProjectData {
     floorPlanMapName: ext?.floorPlanMapName || undefined,
     floorPlanMapConfig: ext?.floorPlanMapConfig || undefined,
     locationClusters: ext?.locationClusters || undefined,
-  };
+  });
 }
 
 /**
@@ -523,8 +572,8 @@ export function rowToAsset(r: any): CinemaAsset {
     name: r.name,
     type: r.type || "image",
     category: r.category || "general",
-    url: r.url,
-    thumbnailUrl: r.thumbnail_url || null,
+    url: normalizeMediaUrl(r.url),
+    thumbnailUrl: r.thumbnail_url ? normalizeMediaUrl(r.thumbnail_url) : null,
     sizeBytes: typeof r.size_bytes === "number" ? r.size_bytes : Number(r.size_bytes) || 0,
     mimeType: r.mime_type || undefined,
     tags: Array.isArray(r.tags) ? r.tags : [],

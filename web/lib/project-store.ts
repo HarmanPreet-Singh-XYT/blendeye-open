@@ -60,6 +60,9 @@ export interface VideoTake {
   characterName?: string;
   isMaster?: boolean;
   sceneId?: string;
+  // Omni Flash interaction id behind this take — lets the director keep
+  // editing/extending the clip across turns without re-rendering it.
+  interactionId?: string;
 }
 
 export interface ShotContinuityBible {
@@ -635,7 +638,7 @@ export interface FilmScene {
     prompt: string;
     createdAt: number;
     title?: string;
-    source?: "location" | "custom" | "veo_ref";
+    source?: "location" | "custom" | "video_ref";
   }>;
   nodes?: Node[];
   edges?: Edge[];
@@ -1628,6 +1631,7 @@ export function saveVideoTake(
     characterName: takeData.characterName,
     isMaster: takeData.isMaster ?? (currentTakes.length === 0),
     sceneId: takeData.sceneId,
+    interactionId: takeData.interactionId,
   };
 
   if (!project) return newTake;

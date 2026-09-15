@@ -529,7 +529,7 @@ export function ClickHouseInspector({
                         Live Telemetry Benchmark & Load Generator
                       </span>
                       <span className="text-[10px] text-muted-foreground block">
-                        Dispatches a calibrated multi-system burst across ClickHouse, Parallel Web, Veo 3.1 & Gemini
+                        Dispatches a calibrated multi-system burst across ClickHouse, Parallel Web, Omni Flash & Gemini
                       </span>
                     </div>
                   </div>
@@ -593,11 +593,11 @@ export function ClickHouseInspector({
                 {/* Pipeline Status Cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="p-2 rounded border border-border bg-secondary/20 space-y-1">
-                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Veo 3.1 Pipeline</span>
+                    <span className="text-[10px] text-muted-foreground uppercase font-semibold">Omni Flash Pipeline</span>
                     <div className="flex items-center gap-1 text-xs">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       <span className="font-mono font-medium text-emerald-400">
-                        {observabilityData?.telemetry?.pipeline_state?.veo_video_sequencer || "nominal"}
+                        {observabilityData?.telemetry?.pipeline_state?.omni_video_sequencer || "nominal"}
                       </span>
                     </div>
                   </div>
@@ -716,7 +716,7 @@ export function ClickHouseInspector({
                   <div className="flex flex-wrap gap-2">
                     {(observabilityData?.alerts || [
                       { name: "ClickHouseSubMillisecondSLO", state: "firing_healthy", message: "ClickHouse queries executing < 4ms target." },
-                      { name: "VeoQueueThroughput", state: "normal", message: "Pixel-anchored video pipeline nominal." },
+                      { name: "OmniVideoQueueThroughput", state: "normal", message: "Pixel-anchored video pipeline nominal." },
                     ]).map((alert: any, aIdx: number) => (
                       <div key={aIdx} className="px-2.5 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] flex items-center gap-1.5">
                         <CheckCircle2 className="h-3 w-3 shrink-0" />

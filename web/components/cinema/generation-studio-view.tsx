@@ -49,6 +49,7 @@ import {
   Music,
   Trash2,
   Upload,
+  Wand2,
 } from "lucide-react";
 import { AssetPickerModal } from "@/components/cinema/asset-picker-modal";
 import type { Node, Edge } from "@xyflow/react";
@@ -118,12 +119,28 @@ const STYLE_PRESETS = [
   { id: "Fincher Low-Key Practical Cold/Amber", label: "Fincher Low-Key", desc: "Desaturated greens/ambers, precise geometric lighting" },
 ];
 
-// Veo 3.1 only renders in these two ratios — no others are offered since
-// picking anything else would silently render 16:9 and crop it with CSS.
+// Gemini Omni Flash renders landscape or portrait only — no other ratio is
+// offered, since picking anything else would silently render 16:9 and crop it
+// with CSS. Clip length (3-10s) is prompt-driven, not a parameter, so there is
+// no duration control; resolution is a real request parameter instead.
 const ASPECT_RATIOS = [
   { id: "16:9", label: "16:9 Widescreen", ratioClass: "aspect-video", safeGuide: "16:9 Standard" },
   { id: "9:16", label: "9:16 Mobile", ratioClass: "aspect-[9/16]", safeGuide: "9:16 Vertical" },
 ];
+
+const RESOLUTIONS = [
+  { id: "360p", label: "360p Draft" },
+  { id: "720p", label: "720p Standard" },
+  { id: "1080p", label: "1080p High" },
+  { id: "4k", label: "4K Master" },
+];
+
+// Omni renders synchronously on the backend and a 4K clip can run for several
+// minutes, so the client polls well past the old 90s give-up budget.
+const RENDER_POLL_INTERVAL_MS = 5000;
+const RENDER_POLL_MAX_ATTEMPTS = 120;
+const renderPollBudgetLabel = () =>
+  `${Math.round((RENDER_POLL_INTERVAL_MS * RENDER_POLL_MAX_ATTEMPTS) / 60000)}m`;
 
 const PROMPT_SUGGESTIONS = [
   "+ 35mm Anamorphic",
@@ -146,6 +163,9 @@ interface RenderedTake {
   style: string;
   videoUrl: string;
   prompt: string;
+  // Omni interaction id behind this take — the handle for conversational
+  // edits and tail extensions without re-rendering from scratch.
+  interactionId?: string;
   isSample?: boolean;
 }
 
@@ -169,7 +189,7 @@ export function GenerationStudioView({
 }: GenerationStudioViewProps) {
   const effectiveProjectId = projectId || "default-production";
 
-  // Studio Mode: Veo Video Takes vs Dedicated Scene Scouting vs Lyria 3 Music Scoring
+  // Studio Mode: Omni Video Takes vs Dedicated Scene Scouting vs Lyria 3 Music Scoring
   const [studioMode, setStudioMode] = React.useState<"video" | "scout" | "timeline" | "score">("video");
   const [conditioningSource, setConditioningSource] = React.useState<"character" | "scene">("character");
   const [activeSceneRefTitle, setActiveSceneRefTitle] = React.useState<string | null>(null);
@@ -187,8 +207,12 @@ export function GenerationStudioView({
   );
   const [stylePreset, setStylePreset] = React.useState<string>(STYLE_PRESETS[0].id);
   const [aspectRatio, setAspectRatio] = React.useState<string>("16:9");
+  const [resolution, setResolution] = React.useState<string>("720p");
+  // Metadata only — Omni derives clip length from the prompt, so this tracks
+  // whatever the last loaded clip actually ran rather than a request value.
   const [durationSec, setDurationSec] = React.useState<number>(6);
   const [showFrameGuides, setShowFrameGuides] = React.useState<boolean>(false);
+  const [refineInstruction, setRefineInstruction] = React.useState<string>("");
 
   const [selectedCharacterName, setSelectedCharacterName] = React.useState<string | null>(null);
   const activeCharacter = characters.find((c) => c.name === selectedCharacterName);
@@ -269,6 +293,7 @@ export function GenerationStudioView({
         style: t.stylePreset,
         videoUrl: t.videoUrl,
         prompt: t.prompt || "",
+        interactionId: t.interactionId,
       }));
     }
     return [];
@@ -309,6 +334,7 @@ export function GenerationStudioView({
         style: t.stylePreset,
         videoUrl: t.videoUrl,
         prompt: t.prompt || "",
+        interactionId: t.interactionId,
       }));
       setRecentTakes(mapped);
       const targetUrl = activeSceneObj?.activeVideoUrl || mapped[0]?.videoUrl || "";
@@ -353,6 +379,7 @@ export function GenerationStudioView({
       videoUrl: t.videoUrl,
       prompt: t.prompt,
       isMaster: t.id === activeTakeId,
+      interactionId: t.interactionId,
     })),
   [recentTakes, activeTakeId]);
 
@@ -420,49 +447,52 @@ export function GenerationStudioView({
     }
   };
 
-  const handleGenerateVeoVideo = async () => {
-    if (isGenerating) return;
+  // Every render path (fresh generation, conversational edit, tail extension)
+  // dispatches a job and then streams progress off the same status endpoint —
+  // they only differ in which endpoint they POST to.
+  const submitRender = async (endpoint: string, body: Record<string, unknown>) => {
     setIsGenerating(true);
-    setGenerationStage("Conditioning Google Veo 3.1 Motion Vectors...");
+    setGenerationStage("Conditioning Gemini Omni Flash motion vectors...");
 
     try {
-      const fullPrompt = prompt.trim();
-      const res = await fetch("/api/media/video", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: fullPrompt,
-          duration_seconds: durationSec,
-          aspect_ratio: aspectRatio,
-          style_preset: stylePreset,
-          image_url: activeConditioningImage || undefined,
-          character_name: selectedCharacterName || undefined,
-        }),
+        body: JSON.stringify(body),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.video_url && data.status === "completed") {
-          setActiveVideoUrl(data.video_url);
-          setIsGenerating(false);
-          setGenerationStage("");
-          addTakeToHistory(data.video_url);
-          notifyIfFallback(data, "Video Render");
-        } else {
-          pollVideoStatus(data.operation_name);
-        }
-      } else {
+      if (!res.ok) {
         const detail = await res.text().catch(() => "");
         toast.add({
           title: "Video generation failed",
-          description: detail || `Veo request failed (${res.status}). Try again.`,
+          description: detail || `Render request failed (${res.status}). Try again.`,
+          type: "error",
+        });
+        setIsGenerating(false);
+        setGenerationStage("");
+        return;
+      }
+
+      const data = await res.json();
+      if (data.video_url && data.status === "completed") {
+        setActiveVideoUrl(data.video_url);
+        setIsGenerating(false);
+        setGenerationStage("");
+        addTakeToHistory(data.video_url, data.interaction_id);
+        notifyIfFallback(data, "Video Render");
+      } else if (data.operation_name) {
+        pollVideoStatus(data.operation_name);
+      } else {
+        toast.add({
+          title: "Video generation failed",
+          description: data.error || "The render backend returned no job to track.",
           type: "error",
         });
         setIsGenerating(false);
         setGenerationStage("");
       }
     } catch (err) {
-      console.error("Veo generation error:", err);
+      console.error("Video render error:", err);
       toast.add({
         title: "Video generation failed",
         description: err instanceof Error ? err.message : "Could not reach the render backend.",
@@ -473,8 +503,48 @@ export function GenerationStudioView({
     }
   };
 
+  const handleGenerateTake = () => {
+    if (isGenerating) return;
+    return submitRender("/api/media/video", {
+      prompt: prompt.trim(),
+      aspect_ratio: aspectRatio,
+      resolution,
+      style_preset: stylePreset,
+      image_url: activeConditioningImage || undefined,
+      character_name: selectedCharacterName || undefined,
+    });
+  };
+
+  // The take on the monitor is what gets refined. Omni edits either a clip it
+  // rendered itself (by interaction id — no re-upload) or a user-supplied clip,
+  // which is uploaded to the Files API on the way in (≤10s, region-limited).
+  const activeRefineTake = recentTakes.find((t) => t.id === activeTakeId) || recentTakes[0];
+  const refineInteractionId = activeRefineTake?.interactionId;
+  const refineVideoUrl = refineInteractionId ? undefined : activeRefineTake?.videoUrl;
+  const canRefine = Boolean(refineInteractionId || refineVideoUrl);
+
+  const handleApplyEdit = () => {
+    if (isGenerating || !canRefine || !refineInstruction.trim()) return;
+    return submitRender("/api/media/video/edit", {
+      interaction_id: refineInteractionId,
+      video_url: refineVideoUrl,
+      instruction: refineInstruction.trim(),
+      aspect_ratio: aspectRatio,
+    });
+  };
+
+  const handleExtendScene = () => {
+    if (isGenerating || !canRefine) return;
+    return submitRender("/api/media/video/extend", {
+      interaction_id: refineInteractionId,
+      video_url: refineVideoUrl,
+      prompt: refineInstruction.trim() || "Continue the scene.",
+      aspect_ratio: aspectRatio,
+    });
+  };
+
   const pollVideoStatus = async (opName: string) => {
-    setGenerationStage("Google Veo 3.1 Cloud Synthesis: Painting Photoreal Frames...");
+    setGenerationStage("Gemini Omni Flash synthesis: painting photoreal frames...");
     let attempts = 0;
     stopPolling();
     pollIntervalRef.current = setInterval(async () => {
@@ -488,32 +558,32 @@ export function GenerationStudioView({
             setActiveVideoUrl(statusData.video_url);
             setIsGenerating(false);
             setGenerationStage("");
-            addTakeToHistory(statusData.video_url);
+            addTakeToHistory(statusData.video_url, statusData.interaction_id);
             notifyIfFallback(statusData, "Video Render");
           } else if (statusData.status === "failed" || statusData.status === "error") {
             stopPolling();
             toast.add({
               title: "Video generation failed",
-              description: statusData.error || "Veo reported a failed render.",
+              description: statusData.error || "Omni reported a failed render.",
               type: "error",
             });
             setIsGenerating(false);
             setGenerationStage("");
-          } else if (attempts > 30) {
+          } else if (attempts > RENDER_POLL_MAX_ATTEMPTS) {
             stopPolling();
             toast.add({
               title: "Video generation timed out",
-              description: "Veo didn't finish rendering within 90s. Try again, or check the agent-service logs.",
+              description: `Omni didn't finish rendering within ${renderPollBudgetLabel()}. Try again, or check the agent-service logs.`,
               type: "warning",
             });
             setIsGenerating(false);
             setGenerationStage("");
           }
-        } else if (attempts > 30) {
+        } else if (attempts > RENDER_POLL_MAX_ATTEMPTS) {
           stopPolling();
           toast.add({
             title: "Video generation timed out",
-            description: "Couldn't confirm render status after 90s. Try again.",
+            description: `Couldn't confirm render status after ${renderPollBudgetLabel()}. Try again.`,
             type: "warning",
           });
           setIsGenerating(false);
@@ -529,7 +599,7 @@ export function GenerationStudioView({
         setIsGenerating(false);
         setGenerationStage("");
       }
-    }, 3000);
+    }, RENDER_POLL_INTERVAL_MS);
   };
 
   const handleCancelGeneration = () => {
@@ -538,12 +608,12 @@ export function GenerationStudioView({
     setGenerationStage("");
     toast.add({
       title: "Stopped watching this render",
-      description: "Veo has no cancel API — the job keeps rendering on Google's side, it just won't be picked up here.",
+      description: "Omni has no cancel API — the job keeps rendering on Google's side, it just won't be picked up here.",
       type: "info",
     });
   };
 
-  const addTakeToHistory = (url: string) => {
+  const addTakeToHistory = (url: string, interactionId?: string) => {
     const nextNum = recentTakes.length + 1;
     const newTake: RenderedTake = {
       id: "take-" + Date.now(),
@@ -555,6 +625,7 @@ export function GenerationStudioView({
       style: stylePreset,
       videoUrl: url,
       prompt,
+      interactionId,
     };
     setRecentTakes((prev) => [newTake, ...prev]);
     setActiveTakeId(newTake.id);
@@ -570,6 +641,7 @@ export function GenerationStudioView({
       prompt,
       isMaster: true,
       sceneId: activeSceneObj?.id,
+      interactionId,
     });
 
     if (activeSceneObj && onUpdateScene) {
@@ -591,8 +663,8 @@ export function GenerationStudioView({
     });
   };
 
-  // ---- Full-Scene (multi-shot chained Veo) generation ----
-  // A single Veo call is capped at 4-8s; scenes can run far longer, so this
+  // ---- Full-Scene (multi-shot chained Omni) generation ----
+  // A single Omni clip is capped at 3-10s; scenes can run far longer, so this
   // plans a sequence of shots up front (each with a locked continuity bible)
   // and then generates them one at a time server-side, conditioning each
   // shot on the previous shot's last frame for visual continuity.
@@ -863,7 +935,9 @@ export function GenerationStudioView({
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
-      setVideoDuration(videoRef.current.duration || durationSec);
+      const loaded = videoRef.current.duration;
+      setVideoDuration(loaded || durationSec);
+      if (loaded) setDurationSec(Math.round(loaded));
     }
   };
 
@@ -966,7 +1040,7 @@ export function GenerationStudioView({
       generator: "BlendEye Studio Pipeline",
       activeTake: recentTakes.find((t) => t.id === activeTakeId) || recentTakes[0],
       videoDelivery: {
-        engine: "Google Veo 3.1",
+        engine: "Gemini Omni Flash",
         cameraMotion,
         stylePreset,
         aspectRatio,
@@ -1049,7 +1123,7 @@ export function GenerationStudioView({
 
           {studioMode === "video" ? (
             <Badge variant="outline" className="hidden sm:inline-flex border-accent/40 bg-accent/10 text-accent font-mono text-[10px]">
-              Google Veo 3.1
+              Gemini Omni Flash
             </Badge>
           ) : studioMode === "scout" ? (
             <Badge variant="outline" className="hidden sm:inline-flex border-amber-500/40 bg-amber-500/10 text-amber-300 font-mono text-[10px]">
@@ -1083,7 +1157,7 @@ export function GenerationStudioView({
             )}
           >
             <Video className="h-3.5 w-3.5" />
-            <span>Veo 3.1 Video</span>
+            <span>Omni Flash</span>
           </button>
           <button
             type="button"
@@ -1154,7 +1228,7 @@ export function GenerationStudioView({
 
               <a
                 href={activeVideoUrl}
-                download={`${sceneTitle.replace(/\s+/g, "_")}_veo_master.mp4`}
+                download={`${sceneTitle.replace(/\s+/g, "_")}_omni_master.mp4`}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -1170,16 +1244,16 @@ export function GenerationStudioView({
               variant="outline"
               onClick={() => setStudioMode("video")}
               className="h-8 text-xs gap-1.5 border-purple-500/40 bg-purple-500/10 text-purple-200 hover:bg-purple-500/20 cursor-pointer"
-              title="Switch to Google Veo 3.1 Video Generator"
+              title="Switch to the Gemini Omni Flash Video Generator"
             >
               <Video className="h-3.5 w-3.5 text-purple-300" />
-              <span>Switch to Veo Takes</span>
+              <span>Switch to Video Takes</span>
             </Button>
           )}
         </div>
       </header>
 
-      {/* Main Content: Either Scene Scout Studio or Veo Video Workstation */}
+      {/* Main Content: Either Scene Scout Studio or Omni Video Workstation */}
       {studioMode === "scout" ? (
         <SceneScoutView
           projectId={projectId}
@@ -1187,7 +1261,7 @@ export function GenerationStudioView({
           activeSceneId={activeSceneId}
           onSelectScene={onSelectScene}
           onUpdateScene={onUpdateScene}
-          onLinkToVeo={(imgUrl, promptInfo) => {
+          onLinkToVideo={(imgUrl, promptInfo) => {
             setActiveConditioningImage(imgUrl);
             setActiveImageType(null);
             setConditioningSource("scene");
@@ -1196,7 +1270,7 @@ export function GenerationStudioView({
             setActiveTab("camera");
             setPrompt((prev) => `${prev} Based on scene visual concept reference.`);
             toast.add({
-              title: "🎬 Linked to Google Veo 3.1",
+              title: "🎬 Linked to Gemini Omni Flash",
               description: "Scene image set as reference conditioning for video takes.",
               type: "success",
             });
@@ -1409,9 +1483,9 @@ export function GenerationStudioView({
                     <Video className="h-6 w-6" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-heading font-bold text-foreground">Veo 3.1 Screening Monitor Ready</h4>
+                    <h4 className="text-sm font-heading font-bold text-foreground">Omni Flash Screening Monitor Ready</h4>
                     <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-                      Configure your prompt, camera motion, and visual style on the left, then click &quot;Render Take with Veo 3.1&quot; to produce your scene take.
+                      Configure your prompt, camera motion, and visual style on the left, then click &quot;Render Scene with Gemini Omni Flash&quot; to produce your scene take.
                     </p>
                   </div>
                 </div>
@@ -1556,7 +1630,7 @@ export function GenerationStudioView({
             </div>
           </div>
 
-          {/* TAB 1: Camera Motion, Visual Prompt & Veo Dispatch */}
+          {/* TAB 1: Camera Motion, Visual Prompt & Omni Dispatch */}
           {activeTab === "camera" && (
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
               {/* Visual Reference Conditioning Module (Character or Scene & Location Image) */}
@@ -1564,7 +1638,7 @@ export function GenerationStudioView({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <Sparkles className="h-3.5 w-3.5 text-purple-400" />
-                    <SlateLabel>Veo Conditioning Reference</SlateLabel>
+                    <SlateLabel>Video Conditioning Reference</SlateLabel>
                   </div>
                   <Badge variant="outline" className="text-[9px] font-mono border-purple-500/40 text-purple-300 py-0">
                     {activeConditioningImage ? "Conditioned ✓" : "Text Only"}
@@ -1776,7 +1850,7 @@ export function GenerationStudioView({
                             {activeSceneRefTitle || activeSceneObj?.title || "Scene Reference"}
                           </span>
                           <span className="text-[9px] font-mono text-emerald-400">
-                            Conditioning Veo 3.1
+                            Conditioning the render
                           </span>
                         </div>
                         <button
@@ -2046,7 +2120,7 @@ export function GenerationStudioView({
                 <div className="flex items-center justify-between">
                   <SlateLabel>Camera Motion Vector</SlateLabel>
                   <span className="text-[10px] font-mono text-muted-foreground">
-                    Veo 3.1 Trajectory
+                    Omni Flash Trajectory
                   </span>
                 </div>
 
@@ -2117,7 +2191,7 @@ export function GenerationStudioView({
                 </div>
               </div>
 
-              {/* Aspect Ratio & Duration */}
+              {/* Aspect Ratio & Output Resolution */}
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div className="flex flex-col gap-1.5">
                   <SlateLabel>Aspect Ratio</SlateLabel>
@@ -2142,25 +2216,32 @@ export function GenerationStudioView({
 
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between">
-                    <SlateLabel>Duration</SlateLabel>
-                    <span className="text-xs font-mono font-bold text-accent">{durationSec}s</span>
+                    <SlateLabel>Resolution</SlateLabel>
+                    <span className="text-xs font-mono font-bold text-accent">{resolution}</span>
                   </div>
-                  <input
-                    type="range"
-                    min={4}
-                    max={8}
-                    step={1}
-                    value={durationSec}
-                    onChange={(e) => setDurationSec(Number(e.target.value))}
-                    className="w-full mt-2 accent-accent cursor-pointer"
-                  />
-                  <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground">
-                    <span>4s</span>
-                    <span>6s</span>
-                    <span>8s</span>
+                  <div className="grid grid-cols-2 gap-1">
+                    {RESOLUTIONS.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setResolution(r.id)}
+                        title={r.label}
+                        className={cn(
+                          "py-1.5 px-1 rounded text-center text-[11px] font-mono cursor-pointer transition-colors border",
+                          resolution === r.id
+                            ? "bg-accent text-accent-foreground border-accent font-semibold"
+                            : "bg-secondary/30 border-border text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {r.id}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
+              <p className="text-[10px] text-muted-foreground font-mono -mt-2">
+                Clip length is prompt-driven (3-10s per render).
+              </p>
 
               {/* Full Scene (chained multi-shot) toggle */}
               <div className="rounded-lg border border-border bg-secondary/20 p-3 flex flex-col gap-2.5">
@@ -2178,7 +2259,7 @@ export function GenerationStudioView({
                   </Badge>
                 </button>
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Veo only renders 4-8s per call. Enable this to plan a scene of any length as a
+                  Omni renders 3-10s per clip. Enable this to plan a scene of any length as a
                   sequence of shots, each conditioned on the previous shot&apos;s last frame for continuity.
                 </p>
 
@@ -2297,7 +2378,7 @@ export function GenerationStudioView({
                   <div className="flex gap-2">
                     <Button
                       size="lg"
-                      onClick={handleGenerateVeoVideo}
+                      onClick={handleGenerateTake}
                       disabled={isGenerating}
                       className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90 font-semibold gap-2 cursor-pointer shadow-md"
                     >
@@ -2307,7 +2388,7 @@ export function GenerationStudioView({
                         <Sparkles className="h-4 w-4" />
                       )}
                       <span>
-                        {isGenerating ? "Rendering with Veo 3.1..." : "Render Scene with Google Veo 3.1"}
+                        {isGenerating ? "Rendering with Omni Flash..." : "Render Scene with Gemini Omni Flash"}
                       </span>
                     </Button>
                     {isGenerating && (
@@ -2332,6 +2413,60 @@ export function GenerationStudioView({
                       </div>
                     </div>
                   )}
+
+                  {/* Conversational refine — Omni's multi-turn edit + tail extension */}
+                  <div className="rounded-lg border border-border bg-secondary/20 p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Wand2 className="h-3.5 w-3.5 text-accent" />
+                        <SlateLabel>Refine On Monitor</SlateLabel>
+                      </span>
+                      <Badge variant="outline" className="text-[9px] font-mono py-0">
+                        {refineInteractionId ? "Multi-turn" : refineVideoUrl ? "Uploads clip" : "Render a take first"}
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Omni edits the active take through conversation — everything you don&apos;t mention is
+                      preserved. Extending appends a continuation to the end of the clip.
+                    </p>
+                    {refineVideoUrl && (
+                      <p className="text-[10px] font-mono text-amber-400/90 leading-snug">
+                        This clip wasn&apos;t rendered here, so it gets uploaded first — source must be ≤10s,
+                        and editing uploaded clips is unavailable in the EEA, Switzerland and the UK.
+                      </p>
+                    )}
+                    <Textarea
+                      rows={2}
+                      value={refineInstruction}
+                      onChange={(e) => setRefineInstruction(e.target.value)}
+                      disabled={!canRefine || isGenerating}
+                      className="font-mono text-xs bg-background/60 resize-none min-h-[56px]"
+                      placeholder={'e.g. "Change the lighting to be more dramatic. Keep everything else the same."'}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleApplyEdit}
+                        disabled={!canRefine || isGenerating || !refineInstruction.trim()}
+                        className="flex-1 gap-1.5 cursor-pointer"
+                      >
+                        <Wand2 className="h-3.5 w-3.5" />
+                        <span>Apply Edit</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleExtendScene}
+                        disabled={!canRefine || isGenerating}
+                        className="flex-1 gap-1.5 cursor-pointer"
+                        title="Append a 3-10s continuation to the tail of the active take (up to 40s total)"
+                      >
+                        <Clapperboard className="h-3.5 w-3.5" />
+                        <span>Extend Tail</span>
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -2426,7 +2561,7 @@ export function GenerationStudioView({
                   </div>
                   <div className="flex items-center justify-between text-xs font-mono p-2 rounded bg-background/60 border border-border/40">
                     <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <Video className="h-3.5 w-3.5 text-accent" /> Veo 3.1 Master Video
+                      <Video className="h-3.5 w-3.5 text-accent" /> Omni Flash Master Video
                     </span>
                     <span className="text-emerald-400 text-[10px] font-semibold">Rendered</span>
                   </div>
@@ -2494,7 +2629,7 @@ export function GenerationStudioView({
       <AssetPickerModal
         open={isAssetPickerOpen}
         onOpenChange={setIsAssetPickerOpen}
-        title="Select Conditioning Reference for Veo 3.1"
+        title="Select Conditioning Reference for Gemini Omni Flash"
         description="Choose a character face, location plate, or style image from your Asset Hub."
         acceptedTypes={["image"]}
         projectId={projectId}

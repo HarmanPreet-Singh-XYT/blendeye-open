@@ -20,7 +20,7 @@ def test_map_endpoint_to_agentic():
     assert map_endpoint_to_agentic("/location-scout/precedents")["agentic_use"] == "location_scouting"
 
     # Test media routes
-    assert map_endpoint_to_agentic("/video-sequence/plan")["agentic_use"] == "video_sequencer_veo"
+    assert map_endpoint_to_agentic("/video-sequence/plan")["agentic_use"] == "video_sequencer_omni"
     assert map_endpoint_to_agentic("/media/tts")["agentic_use"] == "audio_dialogue_tts"
     assert map_endpoint_to_agentic("/media/image")["agentic_use"] == "storyboard_artist_imagen"
 

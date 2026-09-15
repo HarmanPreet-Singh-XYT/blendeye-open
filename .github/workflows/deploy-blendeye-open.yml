@@ -1,4 +1,4 @@
-name: Deploy Agent Service to Google Cloud Run
+name: Deploy BlendEye Open Agent Service to Google Cloud Run
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - 'agent-service/**'
-      - '.github/workflows/deploy-backend.yml'
+      - '.github/workflows/deploy-blendeye-open.yml'
   workflow_dispatch:
     inputs:
       region:
@@ -17,7 +17,7 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ github.event.inputs.region || vars.GCP_REGION || 'us-central1' }}
-  SERVICE_NAME: agent-service
+  SERVICE_NAME: blendeye-open-agent-service
 
 jobs:
   deploy:
@@ -57,7 +57,13 @@ jobs:
           ENV_VARS="${ENV_VARS},CLICKHOUSE_PASSWORD=${{ secrets.CLICKHOUSE_PASSWORD }}"
           ENV_VARS="${ENV_VARS},CLICKHOUSE_DATABASE=${{ secrets.CLICKHOUSE_DATABASE || 'default' }}"
           ENV_VARS="${ENV_VARS},CLICKHOUSE_SECURE=${{ secrets.CLICKHOUSE_SECURE || 'true' }}"
-          ENV_VARS="${ENV_VARS},ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS || '*' }}"
+          # CORS. Browser traffic goes to the Next.js API routes on the same
+          # origin, and Next.js -> agent-service is server-to-server, so CORS is
+          # belt-and-braces here — but the old '*' fallback left the backend
+          # callable from any page on the web (audit C1). Default to the
+          # production frontend origin instead; override with the
+          # ALLOWED_ORIGINS secret when testing from a preview domain.
+          ENV_VARS="${ENV_VARS},ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS || 'https://blendeye.harmanita.com' }}"
           ENV_VARS="${ENV_VARS},GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}"
           if [ -n "${{ secrets.PARALLEL_API_KEY }}" ]; then
             ENV_VARS="${ENV_VARS},PARALLEL_API_KEY=${{ secrets.PARALLEL_API_KEY }}"

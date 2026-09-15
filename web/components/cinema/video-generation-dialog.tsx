@@ -53,7 +53,7 @@ import {
   type NodeContribution,
 } from "@/lib/cinema-prompt-synthesizer";
 
-interface VeoVideoDialogProps {
+interface VideoGenerationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sceneTitle: string;
@@ -85,7 +85,19 @@ const STYLE_PRESETS = [
   "Gritty 16mm Indie Grain",
 ];
 
-export function VeoVideoDialog({
+const RESOLUTIONS = [
+  { id: "360p", label: "360p Draft" },
+  { id: "720p", label: "720p Standard" },
+  { id: "1080p", label: "1080p High" },
+  { id: "4k", label: "4K Master" },
+];
+
+// Omni renders synchronously and a 4K clip can take several minutes, so the
+// dialog polls well past the old 90s give-up budget.
+const RENDER_POLL_INTERVAL_MS = 5000;
+const RENDER_POLL_MAX_ATTEMPTS = 120;
+
+export function VideoGenerationDialog({
   open,
   onOpenChange,
   sceneTitle,
@@ -100,7 +112,7 @@ export function VeoVideoDialog({
   nodes = [],
   screenplayText,
   genre,
-}: VeoVideoDialogProps) {
+}: VideoGenerationDialogProps) {
   const effectiveProjectId = projectId || "";
 
   const [selectedCharName, setSelectedCharName] = React.useState<string | null>(
@@ -108,7 +120,9 @@ export function VeoVideoDialog({
   );
   const [cameraMotion, setCameraMotion] = React.useState<string>(CAMERA_MOTIONS[0]);
   const [stylePreset, setStylePreset] = React.useState<string>(STYLE_PRESETS[0]);
+  // Metadata only — Omni derives clip length from the prompt, not a parameter.
   const [durationSec, setDurationSec] = React.useState<number>(6);
+  const [resolution, setResolution] = React.useState<string>("720p");
   const [customPrompt, setCustomPrompt] = React.useState<string>(
     visualPrompt ||
       `Cinematic establishing shot of ${sceneTitle}. Moody shadows, photoreal anamorphic lens, high dramatic tension.`
@@ -226,11 +240,11 @@ export function VeoVideoDialog({
     }
   }, [open, characterContext, activeCharacterName]);
 
-  // Handle Video Generation via Google Veo 3.1
+  // Handle video generation via Gemini Omni Flash
   const handleGenerateVideo = async () => {
     if (isGenerating) return;
     setIsGenerating(true);
-    setGenerationStage("Conditioning Google Veo 3.1 Motion Vectors...");
+    setGenerationStage("Conditioning Gemini Omni Flash motion vectors...");
 
     try {
       const fullPrompt = customPrompt.trim();
@@ -239,7 +253,8 @@ export function VeoVideoDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: fullPrompt,
-          duration_seconds: durationSec,
+          aspect_ratio: "16:9",
+          resolution,
           style_preset: stylePreset,
           image_url: activeConditioningImage || undefined,
           character_name: selectedCharName || undefined,
@@ -251,19 +266,18 @@ export function VeoVideoDialog({
         setOperationName(data.operation_name);
 
         if (data.video_url && data.status === "completed") {
-          commitNewTake(data.video_url);
+          commitNewTake(data.video_url, data.interaction_id);
           setIsGenerating(false);
           setGenerationStage("");
           notifyIfFallback(data, "Video Render");
         } else {
-          // Poll operation
           pollVideoStatus(data.operation_name);
         }
       } else {
         const detail = await res.text().catch(() => "");
         toast.add({
           title: "Video generation failed",
-          description: detail || `Veo request failed (${res.status}). Try again.`,
+          description: detail || `Render request failed (${res.status}). Try again.`,
           type: "error",
         });
         setIsGenerating(false);
@@ -282,7 +296,7 @@ export function VeoVideoDialog({
   };
 
   const pollVideoStatus = async (opName: string) => {
-    setGenerationStage("Google Veo 3.1 Cloud Synthesis: Painting 16:9 Frames...");
+    setGenerationStage("Gemini Omni Flash synthesis: painting 16:9 frames...");
     let attempts = 0;
     stopPolling();
     pollIntervalRef.current = setInterval(async () => {
@@ -293,7 +307,7 @@ export function VeoVideoDialog({
           const statusData = await res.json();
           if (statusData.status === "completed" && statusData.video_url) {
             stopPolling();
-            commitNewTake(statusData.video_url);
+            commitNewTake(statusData.video_url, statusData.interaction_id);
             setIsGenerating(false);
             setGenerationStage("");
             notifyIfFallback(statusData, "Video Render");
@@ -301,26 +315,26 @@ export function VeoVideoDialog({
             stopPolling();
             toast.add({
               title: "Video generation failed",
-              description: statusData.error || "Veo reported a failed render.",
+              description: statusData.error || "Omni reported a failed render.",
               type: "error",
             });
             setIsGenerating(false);
             setGenerationStage("");
-          } else if (attempts > 30) {
+          } else if (attempts > RENDER_POLL_MAX_ATTEMPTS) {
             stopPolling();
             toast.add({
               title: "Video generation timed out",
-              description: "Veo didn't finish rendering within 90s. Try again, or check the agent-service logs.",
+              description: "Omni didn't finish rendering in time. Try again, or check the agent-service logs.",
               type: "warning",
             });
             setIsGenerating(false);
             setGenerationStage("");
           }
-        } else if (attempts > 30) {
+        } else if (attempts > RENDER_POLL_MAX_ATTEMPTS) {
           stopPolling();
           toast.add({
             title: "Video generation timed out",
-            description: "Couldn't confirm render status after 90s. Try again.",
+            description: "Couldn't confirm render status. Try again.",
             type: "warning",
           });
           setIsGenerating(false);
@@ -336,11 +350,11 @@ export function VeoVideoDialog({
         setIsGenerating(false);
         setGenerationStage("");
       }
-    }, 3000);
+    }, RENDER_POLL_INTERVAL_MS);
   };
 
   // Permanently save a rendered take into the project store
-  const commitNewTake = (url: string) => {
+  const commitNewTake = (url: string, interactionId?: string) => {
     const nextNum = savedTakes.length + 1;
     const newTake = saveVideoTake(effectiveProjectId, {
       title: `${sceneTitle} — Take ${String(nextNum).padStart(2, "0")}`,
@@ -351,6 +365,7 @@ export function VeoVideoDialog({
       prompt: customPrompt,
       characterName: selectedCharName || undefined,
       sceneId: sceneId,
+      interactionId,
       // Only the first take for this scene auto-becomes Master; later takes are
       // saved as alternates so a render never silently bumps the director's pick.
     });
@@ -369,7 +384,7 @@ export function VeoVideoDialog({
       url: newTake.videoUrl,
       sizeBytes: 0,
       mimeType: "video/mp4",
-      tags: ["veo-3.1", "video-take", "take"],
+      tags: ["omni-flash", "video-take", "take"],
       metadata: {
         cameraMotion,
         stylePreset,
@@ -424,7 +439,7 @@ export function VeoVideoDialog({
     setGenerationStage("");
     toast.add({
       title: "Stopped watching this render",
-      description: "Veo has no cancel API — the job keeps rendering on Google's side, it just won't be picked up here. If it finishes, use the operation status endpoint or check billing if you're worried about cost.",
+      description: "Omni has no cancel API — the job keeps rendering on Google's side, it just won't be picked up here.",
       type: "info",
     });
   };
@@ -464,7 +479,9 @@ export function VeoVideoDialog({
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
-      setVideoDuration(videoRef.current.duration || durationSec);
+      const loaded = videoRef.current.duration;
+      setVideoDuration(loaded || durationSec);
+      if (loaded) setDurationSec(Math.round(loaded));
     }
   };
 
@@ -477,7 +494,7 @@ export function VeoVideoDialog({
   };
 
   const handleVideoError = () => {
-    console.warn("Veo player video load error on:", videoUrl);
+    console.warn("Omni player video load error on:", videoUrl);
     const fallback = "/videos/vault_heist_take_01.mp4";
     if (videoUrl !== fallback) {
       setVideoUrl(fallback);
@@ -509,10 +526,10 @@ export function VeoVideoDialog({
               <div>
                 <div className="flex items-center gap-2">
                   <DialogTitle className="text-base font-heading">
-                    Google Veo 3.1 Cinema Video Generation · {sceneTitle}
+                    Gemini Omni Flash Cinema Video Generation · {sceneTitle}
                   </DialogTitle>
                   <Badge variant="outline" className="border-purple-500/40 bg-purple-500/10 text-purple-300 text-[10px] font-mono">
-                    Veo 3.1 Fast Preview
+                    Omni Flash
                   </Badge>
                 </div>
                 <DialogDescription className="text-xs text-muted-foreground">
@@ -524,7 +541,7 @@ export function VeoVideoDialog({
             <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
               <div className="flex items-center gap-1.5 bg-secondary/50 px-2.5 py-1 rounded-md border border-border/70">
                 <Clock className="h-3 w-3 text-accent" />
-                <span>{durationSec}s Take</span>
+                <span>{resolution} · {durationSec}s Take</span>
               </div>
               <div className="hidden sm:flex items-center gap-1.5 bg-purple-500/10 text-purple-300 px-2.5 py-1 rounded-md border border-purple-500/20">
                 <Film className="h-3 w-3" />
@@ -572,7 +589,7 @@ export function VeoVideoDialog({
               {/* Theater Scope Header Pill */}
               <div className="absolute top-3 left-3 flex items-center gap-2 pointer-events-none z-10">
                 <span className="text-[10px] font-mono uppercase tracking-widest text-white/90 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded border border-white/10 shadow-xs">
-                  Google Veo 3.1 · 16:9 Take
+                  Gemini Omni Flash · 16:9 Take
                 </span>
               </div>
 
@@ -582,7 +599,7 @@ export function VeoVideoDialog({
                   <RefreshCw className="h-8 w-8 text-purple-400 animate-spin" />
                   <div className="space-y-1">
                     <h4 className="text-sm font-heading font-semibold text-foreground">
-                      Google Veo 3.1 Synthesizing Scene...
+                      Gemini Omni Flash Synthesizing Scene...
                     </h4>
                     <p className="text-xs text-purple-300 font-mono">
                       {generationStage}
@@ -773,7 +790,7 @@ export function VeoVideoDialog({
           <div className="md:col-span-5 flex flex-col p-4 bg-secondary/15 border-l border-border/80 space-y-3.5 overflow-y-auto">
             <div className="flex items-center gap-2 border-b border-border/60 pb-2">
               <Camera className="h-4 w-4 text-purple-400" />
-              <SlateLabel>Veo Camera &amp; Cinematography Deck</SlateLabel>
+              <SlateLabel>Video Camera &amp; Cinematography Deck</SlateLabel>
             </div>
 
             {/* Character Focus & Visual Conditioning Module */}
@@ -785,7 +802,7 @@ export function VeoVideoDialog({
                     <span className="text-xs font-bold text-foreground">Character Visual Reference</span>
                   </div>
                   <Badge variant="outline" className="text-[9px] font-mono border-purple-500/40 text-purple-300 py-0">
-                    Veo 3.1 Cast
+                    Omni Flash Cast
                   </Badge>
                 </div>
 
@@ -874,7 +891,7 @@ export function VeoVideoDialog({
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-mono uppercase text-purple-300 font-semibold flex items-center gap-1">
                       <Sparkles className="h-3 w-3 text-accent" />
-                      <span>Veo Image-to-Video Conditioning</span>
+                      <span>Image-to-Video Conditioning</span>
                     </span>
                     {activeConditioningImage ? (
                       <Badge variant="outline" className="text-[8px] font-mono border-emerald-500/50 bg-emerald-500/10 text-emerald-300 py-0">
@@ -1101,28 +1118,32 @@ export function VeoVideoDialog({
               </select>
             </div>
 
-            {/* Duration Selector */}
+            {/* Output Resolution */}
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
-                <span className="font-medium text-foreground">Take Duration</span>
-                <span className="font-mono text-accent">{durationSec} seconds</span>
+                <span className="font-medium text-foreground">Output Resolution</span>
+                <span className="font-mono text-accent">{resolution}</span>
               </div>
               <div className="flex items-center gap-2">
-                {[4, 5, 6, 8].map((sec) => (
+                {RESOLUTIONS.map((r) => (
                   <button
-                    key={sec}
+                    key={r.id}
                     type="button"
-                    onClick={() => setDurationSec(sec)}
+                    onClick={() => setResolution(r.id)}
+                    title={r.label}
                     className={`flex-1 py-1 rounded text-xs font-mono font-semibold transition-all cursor-pointer ${
-                      durationSec === sec
+                      resolution === r.id
                         ? "bg-purple-600 text-white shadow-sm"
                         : "bg-card border border-border text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    {sec}s
+                    {r.id}
                   </button>
                 ))}
               </div>
+              <span className="text-[10px] font-mono text-muted-foreground">
+                Clip length is prompt-driven (3-10s per render).
+              </span>
             </div>
 
             {/* Scene Conditioning Prompt */}
@@ -1146,7 +1167,7 @@ export function VeoVideoDialog({
                 className="flex-1 h-9 text-xs font-semibold gap-2 bg-purple-600 hover:bg-purple-700 text-white shadow-md cursor-pointer"
               >
                 <Sparkles className="h-3.5 w-3.5" />
-                <span>{isGenerating ? "Rendering with Veo 3.1..." : "Render Scene with Google Veo 3.1"}</span>
+                <span>{isGenerating ? "Rendering with Omni Flash..." : "Render Scene with Gemini Omni Flash"}</span>
               </Button>
               {isGenerating && (
                 <Button
@@ -1166,8 +1187,8 @@ export function VeoVideoDialog({
         <AssetPickerModal
           open={isAssetPickerOpen}
           onOpenChange={setIsAssetPickerOpen}
-          title="Select Reference Image or Video Frame for Veo 3.1"
-          description="Condition Google Veo 3.1 motion diffusion on character faces, location plates, or style reference images."
+          title="Select Reference Image or Video Frame for Gemini Omni Flash"
+          description="Condition Gemini Omni Flash motion diffusion on character faces, location plates, or style reference images."
           acceptedTypes={["image"]}
           projectId={projectId}
           onSelectAsset={(asset) => {
@@ -1176,7 +1197,7 @@ export function VeoVideoDialog({
             setConditioningCustomName(asset.name);
             toast.add({
               title: "Conditioning Reference Linked",
-              description: `"${asset.name}" selected as Veo visual anchor.`,
+              description: `"${asset.name}" selected as the visual anchor.`,
               type: "success",
             });
           }}

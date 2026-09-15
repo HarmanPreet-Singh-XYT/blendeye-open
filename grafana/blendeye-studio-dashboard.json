@@ -14,7 +14,7 @@
       }
     ]
   },
-  "description": "BlendEye Executive Studio Observability Dashboard \u2014 Monitoring Google Veo 3.1 Chained Video, ClickHouse Sub-2ms Knowledge Time-Gates, Gemini Multimodal Agents, and Parallel Web Grounding.",
+  "description": "BlendEye Executive Studio Observability Dashboard \u2014 Monitoring Gemini Omni Flash Chained Video, ClickHouse Sub-2ms Knowledge Time-Gates, Gemini Multimodal Agents, and Parallel Web Grounding.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -116,7 +116,7 @@
           "refId": "A",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -195,7 +195,7 @@
           "refId": "A",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -270,7 +270,7 @@
           "refId": "A",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -345,7 +345,7 @@
           "refId": "A",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -416,7 +416,7 @@
           "refId": "A",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -495,7 +495,7 @@
           "refId": "A",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -624,7 +624,7 @@
           "root_selector": "agentic_request_distribution.roles",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -736,7 +736,7 @@
           "root_selector": "agentic_request_distribution.roles",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -867,7 +867,7 @@
           "root_selector": "agentic_request_distribution.roles",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -1025,7 +1025,7 @@
           "root_selector": "network_latencies",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -1197,7 +1197,7 @@
           "root_selector": "agentic_request_distribution.roles",
           "source": "url",
           "type": "json",
-          "url": "https://agent-service-369992010022.us-central1.run.app/observability/overview",
+          "url": "https://blendeye-open-agent-service-369992010022.us-central1.run.app/observability/overview",
           "url_options": {
             "method": "GET"
           }
@@ -1234,7 +1234,7 @@
     "cinema",
     "clickhouse",
     "grafana",
-    "veo",
+    "omni",
     "gemini"
   ],
   "templating": {

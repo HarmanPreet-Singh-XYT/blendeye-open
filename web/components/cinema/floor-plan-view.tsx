@@ -123,7 +123,7 @@ export interface FloorPlanViewProps {
   initialMapConfig?: FloorPlanMapConfig;
   onMapChange?: (mapUrl: string | null, mapName?: string) => void;
   onMapConfigChange?: (config: FloorPlanMapConfig) => void;
-  onSendToVeo?: (camData: {
+  onSendToVideo?: (camData: {
     camName: string;
     lens: string;
     motion: string;
@@ -630,7 +630,7 @@ export function FloorPlanView({
   initialMapConfig,
   onMapChange,
   onMapConfigChange,
-  onSendToVeo,
+  onSendToVideo,
 }: FloorPlanViewProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const svgRef = React.useRef<SVGSVGElement>(null);
@@ -1117,7 +1117,7 @@ export function FloorPlanView({
     return { inFrameChars: inFrame, shotType, distanceFt };
   }, [activeCam, stageChars, computeFrustum]);
 
-  const buildLiveVeoPrompt = React.useCallback(() => {
+  const buildLiveVideoPrompt = React.useCallback(() => {
     if (!activeCam) return "";
     const primaryChar = framedAnalysis.inFrameChars[0]?.char?.name || stageChars[0]?.name || "Lead Subject";
     const heightLabel =
@@ -1136,17 +1136,17 @@ export function FloorPlanView({
     return `2.39:1 Anamorphic Scope, ${framedAnalysis.shotType}. Captured on ${activeCam.lensName} (${activeCam.fov}° FOV) with ${activeCam.motion} from ${framedAnalysis.distanceFt}ft. Camera height: ${heightLabel}. Staging: ${primaryChar} framed on ${framedAnalysis.inFrameChars[0]?.relAngle && framedAnalysis.inFrameChars[0].relAngle < 0 ? "screen-left" : "screen-right"}. Lighting: ${lightNotes}. Setting: ${primaryLocation || sceneTitle || "Atmospheric cinematic soundstage"}, photorealistic, 35mm film grain, Hollywood cinematic color grade, no text or watermarks.`;
   }, [activeCam, framedAnalysis, stageChars, stageLights, primaryLocation, sceneTitle, svgW]);
 
-  const handleSendToVeoBridge = () => {
-    if (!onSendToVeo || !activeCam) return;
-    const promptNote = buildLiveVeoPrompt();
-    onSendToVeo({
+  const handleSendToVideoBridge = () => {
+    if (!onSendToVideo || !activeCam) return;
+    const promptNote = buildLiveVideoPrompt();
+    onSendToVideo({
       camName: activeCam.name,
       lens: `${activeCam.focalLength}mm ${activeCam.lensName.split(" ").slice(1).join(" ")}`,
       motion: activeCam.motion,
       promptNote,
     });
     toast.add({
-      title: "Staging Sent to Veo Prompt",
+      title: "Staging Sent to Video Prompt",
       description: `${activeCam.name} (${activeCam.focalLength}mm) geometry & lighting cues transferred.`,
       type: "success",
     });
@@ -1156,7 +1156,7 @@ export function FloorPlanView({
     if (isRenderingShot) return;
     setIsRenderingShot(true);
     try {
-      const prompt = typeof customPrompt === "string" ? customPrompt : buildLiveVeoPrompt();
+      const prompt = typeof customPrompt === "string" ? customPrompt : buildLiveVideoPrompt();
       const res = await fetch("/api/media/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2576,11 +2576,11 @@ export function FloorPlanView({
                         >
                           Render Frame
                         </button>
-                        {onSendToVeo && (
+                        {onSendToVideo && (
                           <button
                             type="button"
                             onClick={() =>
-                              onSendToVeo({
+                              onSendToVideo({
                                 camName: `Shot ${shot.shot_number} (${shot.shot_type})`,
                                 lens: shot.lens,
                                 motion: shot.camera_movement,
@@ -2589,7 +2589,7 @@ export function FloorPlanView({
                             }
                             className="px-2 py-1 rounded text-[10px] font-mono bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-colors cursor-pointer"
                           >
-                            Send Veo ↗
+                            Send to Video ↗
                           </button>
                         )}
                       </div>
@@ -2617,15 +2617,15 @@ export function FloorPlanView({
             </div>
           )}
 
-          {/* Master Send to Veo Button */}
+          {/* Master Send to Video Button */}
           <div className="pt-1">
             <Button
               size="sm"
-              onClick={handleSendToVeoBridge}
+              onClick={handleSendToVideoBridge}
               className="w-full h-8 bg-amber-500 hover:bg-amber-600 text-black font-semibold text-xs gap-1.5 shadow-sm cursor-pointer"
             >
               <Film className="h-3.5 w-3.5" />
-              <span>Send Staging to Veo Prompt ↗</span>
+              <span>Send Staging to Video Prompt ↗</span>
             </Button>
           </div>
         </div>
@@ -2641,7 +2641,7 @@ export function FloorPlanView({
           <span className="text-accent font-mono text-[9px]">{activeCam?.name || "Cam A"}</span>
         </div>
         <p className="text-[11px] leading-relaxed line-clamp-2 text-foreground/90 font-sans">
-          {buildLiveVeoPrompt()}
+          {buildLiveVideoPrompt()}
         </p>
       </div>
 

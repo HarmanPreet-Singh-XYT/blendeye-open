@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import json
@@ -7,6 +8,7 @@ import re
 import time
 import uuid
 import wave
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -31,9 +33,9 @@ from app.config import get_settings
 from app.services.observability import (
     AUDIO_TTS_SYNTHESIS_SECONDS,
     IMAGEN_STORYBOARDS_TOTAL,
-    VEO_VIDEO_RENDERS_TOTAL,
+    OMNI_VIDEO_RENDERS_TOTAL,
 )
-from app.services.prompt_sanitizer import sanitize_character_name_for_veo, sanitize_veo_prompt
+from app.services.prompt_sanitizer import sanitize_character_name, sanitize_video_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +136,7 @@ async def generate_image(req: GenerateImageRequest):
 
     client = genai.Client(api_key=api_key)
 
-    clean_prompt = sanitize_veo_prompt(req.prompt)
+    clean_prompt = sanitize_video_prompt(req.prompt)
     cinematic_prompt = (
         f"{clean_prompt.strip().rstrip('.')}. "
         f"Aspect ratio {req.aspect_ratio}, photoreal cinematography, high production value, "
@@ -548,13 +550,80 @@ def resolve_image_bytes(image_url: str | None) -> tuple[bytes | None, str | None
     return None, None
 
 
+# ---------------------------------------------------------------------------
+# Gemini Omni Flash — generative video (generation, editing, extension)
+# ---------------------------------------------------------------------------
+#
+# Omni Flash is driven through the Interactions API: one `interactions.create`
+# call returns the rendered clip (inline base64, or a Google-hosted file URI
+# for large renders). There is no operation to poll, so instead of dispatching
+# an operation and polling it, each request runs as a background asyncio task
+# over a small in-memory job store and the status endpoint reports that job.
+# That keeps long renders (a 1080p clip can take minutes) off the HTTP request
+# path while preserving the dispatch/status contract the frontend already
+# speaks.
+#
+# Capabilities exposed below, per the Interactions API:
+#   * text-to-video, image-to-video and reference-to-video generation
+#   * first/last-frame interpolation (two conditioning images)
+#   * conversational editing across turns (previous_interaction_id, or a
+#     user-supplied clip uploaded through the Files API)
+#   * video extension at the tail of an existing clip
+#   * explicit aspect ratio (16:9 / 9:16) and output resolution
+#
+# Duration is deliberately NOT a request parameter: the model derives clip
+# length (3-10s) from the prompt, so callers express timing in natural
+# language instead (see the sequencer's per-shot prompt hint).
+
+_OMNI_TASKS = {"text_to_video", "image_to_video", "reference_to_video", "edit", "extend"}
+_OMNI_ASPECT_RATIOS = {"16:9", "9:16"}
+_OMNI_RESOLUTIONS = {"360p", "720p", "1080p", "4k"}
+# Inline base64 delivery is only viable up to ~4MB; higher-resolution renders
+# come back as a file URI that has to be fetched separately.
+_OMNI_INLINE_RESOLUTIONS = {"360p", "720p"}
+_OMNI_FILE_POLL_INTERVAL_SEC = 5
+_OMNI_FILE_POLL_ATTEMPTS = 60
+_FILE_ID_PATTERN = re.compile(r"files/([A-Za-z0-9_-]+)")
+
+
 class GenerateVideoRequest(BaseModel):
-    prompt: str = Field(..., description="Cinematic scene visual and camera movement prompt")
-    duration_seconds: int = Field(default=5, description="Video duration in seconds (4-8)")
-    aspect_ratio: str = Field(default="16:9", description="Aspect ratio (16:9)")
+    prompt: str = Field(..., description="Cinematic scene visual, action and camera movement prompt")
+    aspect_ratio: str = Field(default="16:9", description="Aspect ratio (16:9 or 9:16)")
+    resolution: str | None = Field(default=None, description="Output resolution: 360p, 720p, 1080p or 4k")
     style_preset: str | None = Field(default="35mm Anamorphic Film", description="Film style preset")
-    image_url: str | None = Field(default=None, description="Optional character concept or storyboard image reference")
+    image_url: str | None = Field(default=None, description="Optional character concept or storyboard reference image")
+    first_frame_url: str | None = Field(default=None, description="Optional starting frame for interpolation")
+    last_frame_url: str | None = Field(default=None, description="Optional ending frame for interpolation")
     character_name: str | None = Field(default=None, description="Optional focused character name")
+    task: str | None = Field(default=None, description="Optional explicit task hint (text_to_video, image_to_video, reference_to_video)")
+
+
+class EditVideoRequest(BaseModel):
+    instruction: str = Field(..., description="Simple natural-language edit, e.g. 'Change the lighting to be more dramatic'")
+    interaction_id: str | None = Field(
+        default=None,
+        description="Interaction id of a clip this service rendered (multi-turn edit, no re-upload)",
+    )
+    video_url: str | None = Field(
+        default=None,
+        description="URL / data-URI of a user-supplied clip to edit. Must be <=10s on upload; "
+        "editing uploaded clips is unavailable in the EEA, Switzerland and the UK.",
+    )
+    aspect_ratio: str = Field(default="16:9", description="Aspect ratio (16:9 or 9:16)")
+
+
+class ExtendVideoRequest(BaseModel):
+    prompt: str = Field(default="Continue the scene.", description="How the scene should continue")
+    interaction_id: str | None = Field(
+        default=None,
+        description="Interaction id of a clip this service rendered (multi-turn extension)",
+    )
+    video_url: str | None = Field(
+        default=None,
+        description="URL / data-URI of a user-supplied clip to extend. Must be <=10s on upload; "
+        "cannot add dialogue to a talking subject; unavailable in the EEA, Switzerland and the UK.",
+    )
+    aspect_ratio: str = Field(default="16:9", description="Aspect ratio (16:9 or 9:16)")
 
 
 class GenerateVideoResponse(BaseModel):
@@ -562,61 +631,370 @@ class GenerateVideoResponse(BaseModel):
     prompt: str
     status: str
     video_url: str | None = None
+    interaction_id: str | None = None
     error: str | None = None
 
 
-def dispatch_veo_generation(
-    client: "genai.Client",
-    *,
-    prompt: str,
-    duration_seconds: int,
-    aspect_ratio: str = "16:9",
-    style_preset: str | None = "35mm Anamorphic Film",
-    character_name: str | None = None,
-    image_url: str | None = None,
-) -> str:
-    """Builds the cinematic prompt, resolves optional image conditioning, and
-    dispatches a single Veo 3.1 render. Returns the operation name.
+class OmniVideoJob(BaseModel):
+    job_id: str
+    status: str = "queued"  # queued | running | completed | error
+    video_url: str | None = None
+    interaction_id: str | None = None
+    error: str | None = None
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
 
-    Shared by the single-shot /media/video endpoint and the sequential
-    chained-generation job (services/video_sequencer.py) so both paths hit
-    Veo identically — the sequencer is not a second implementation of this,
-    it's the same call driven in a loop with the previous shot's last frame
-    passed in as image_url.
+
+# In-memory job store — same tradeoff as the sequence jobs in
+# services/video_sequencer.py: fine for a single-process deployment, would need
+# Redis/DB-backed state to survive a restart or scale past one worker.
+_OMNI_JOBS: dict[str, OmniVideoJob] = {}
+# `asyncio.create_task` only holds a weak reference, so a multi-minute render
+# can be garbage-collected mid-flight without this strong reference.
+_OMNI_RUNNING_TASKS: set[asyncio.Task] = set()
+_MAX_OMNI_JOBS = 64
+_OMNI_JOB_TTL_SECONDS = 3600
+
+
+def _prune_omni_jobs() -> None:
+    """Drops finished jobs past the TTL, then trims the oldest finished jobs
+    until the store is back under the cap. In-flight renders are never evicted.
     """
-    sanitized_prompt = sanitize_veo_prompt(prompt)
-    clean_char_name = sanitize_character_name_for_veo(character_name)
-    character_clause = f" Keep {clean_char_name} as the primary subject in frame throughout." if clean_char_name else ""
-    style_clause = f" Overall visual style: {style_preset}." if style_preset and style_preset.lower() not in sanitized_prompt.lower() else ""
-    cinematic_prompt = (
-        f"{sanitized_prompt.strip().rstrip('.')}.{character_clause}{style_clause} "
-        f"Aspect ratio {aspect_ratio}, photoreal depth, consistent lighting and continuity across frames, "
-        f"no text or watermarks, no jump cuts."
+    now = time.time()
+    for job_id, job in list(_OMNI_JOBS.items()):
+        if job.status in ("completed", "error") and (now - job.updated_at) > _OMNI_JOB_TTL_SECONDS:
+            _OMNI_JOBS.pop(job_id, None)
+
+    overflow = len(_OMNI_JOBS) - _MAX_OMNI_JOBS
+    if overflow <= 0:
+        return
+
+    finished = sorted(
+        (job for job in _OMNI_JOBS.values() if job.status in ("completed", "error")),
+        key=lambda job: job.updated_at,
+    )
+    for job in finished[:overflow]:
+        _OMNI_JOBS.pop(job.job_id, None)
+
+
+def get_omni_video_job(job_id: str) -> OmniVideoJob | None:
+    _prune_omni_jobs()
+    return _OMNI_JOBS.get(job_id)
+
+
+def _resolve_aspect_ratio(value: str | None) -> str:
+    return value if value in _OMNI_ASPECT_RATIOS else "16:9"
+
+
+def resolve_video_resolution(value: str | None) -> str:
+    """Normalizes a requested resolution, falling back to the configured default."""
+    requested = (value or get_settings().omni_video_resolution or "720p").lower()
+    return requested if requested in _OMNI_RESOLUTIONS else "720p"
+
+
+def _build_omni_video_prompt(
+    prompt: str,
+    *,
+    style_preset: str | None = None,
+    character_name: str | None = None,
+) -> str:
+    """Composes the sanitized generation prompt.
+
+    Omni cuts between several shots by default, so a single continuous take has
+    to be asked for explicitly. The negative tail keeps rendered lettering out
+    of frame — Omni can render readable text, which would collide with the
+    studio's own slates/titles.
+    """
+    sanitized = sanitize_video_prompt(prompt)
+    clean_char = sanitize_character_name(character_name)
+
+    parts = [sanitized.strip().rstrip(".")]
+    if clean_char:
+        parts.append(f"Keep {clean_char} as the primary subject in frame throughout")
+    if style_preset and style_preset.lower() not in sanitized.lower():
+        parts.append(f"Overall visual style: {style_preset}")
+    parts.append("In a single continuous shot, no scene cuts")
+    parts.append(
+        "photoreal depth, consistent lighting and continuity across frames, "
+        "no text or watermarks"
+    )
+    return ". ".join(part.rstrip(".") for part in parts if part) + "."
+
+
+def build_video_input(prompt: str, images: list[tuple[bytes, str]]) -> str | list[dict[str, Any]]:
+    """Builds the Interactions API `input` payload, binding images ahead of the prompt."""
+    if not images:
+        return prompt
+
+    parts: list[dict[str, Any]] = [
+        {
+            "type": "image",
+            "data": base64.b64encode(raw).decode("utf-8"),
+            "mime_type": mime or "image/jpeg",
+        }
+        for raw, mime in images
+    ]
+    parts.append({"type": "text", "text": prompt})
+    return parts
+
+
+def _omni_response_format(aspect_ratio: str, resolution: str) -> dict[str, Any]:
+    response_format: dict[str, Any] = {
+        "type": "video",
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+    }
+    if resolution not in _OMNI_INLINE_RESOLUTIONS:
+        response_format["delivery"] = "uri"
+    return response_format
+
+
+def _wait_for_file_active(client: "genai.Client", file_name: str) -> Any:
+    """Polls a Files API object until it finishes PROCESSING.
+
+    Shared by both delivery paths: large model renders arriving as a file URI,
+    and user-supplied clips uploaded before a conversational edit.
+    """
+    for _ in range(_OMNI_FILE_POLL_ATTEMPTS):
+        info = client.files.get(name=file_name)
+        state = getattr(getattr(info, "state", None), "name", None) or str(getattr(info, "state", ""))
+        if state == "ACTIVE":
+            return info
+        if state == "FAILED":
+            error = getattr(info, "error", None)
+            raise RuntimeError(f"Gemini file {file_name} failed processing: {error or 'no reason given'}")
+        time.sleep(_OMNI_FILE_POLL_INTERVAL_SEC)
+
+    raise TimeoutError(f"Timed out waiting for Gemini file {file_name} to become ACTIVE")
+
+
+def _omni_extract_video_bytes(client: "genai.Client", interaction: Any) -> bytes:
+    """Pulls the rendered clip off an Omni interaction.
+
+    Inline responses carry base64 in `output_video.data`; large renders come
+    back as a Google-hosted file URI that has to be polled to ACTIVE before it
+    can be downloaded. Both shapes are handled here so callers don't need to
+    know which delivery mode they got.
+    """
+    output = getattr(interaction, "output_video", None)
+    if output is None:
+        raise RuntimeError("Omni interaction returned no video output")
+
+    data = getattr(output, "data", None)
+    if data:
+        return base64.b64decode(data)
+
+    uri = getattr(output, "uri", None)
+    if not uri:
+        raise RuntimeError("Omni interaction returned neither inline video data nor a file URI")
+
+    match = _FILE_ID_PATTERN.search(uri)
+    if not match:
+        raise RuntimeError(f"Could not parse a file id out of the Omni output URI: {uri}")
+
+    _wait_for_file_active(client, f"files/{match.group(1)}")
+
+    buf = io.BytesIO()
+    client.files.download(file=uri, destination=buf)
+    return buf.getvalue()
+
+
+def resolve_video_bytes(video_url: str | None) -> bytes | None:
+    """Extracts raw video bytes from a data URI, HTTP URL, or local static path.
+
+    Mirrors `resolve_image_bytes`, but aware of video data-URIs — this is how a
+    user-supplied clip reaches the Files API for editing/extension.
+    """
+    if not video_url:
+        return None
+    try:
+        if video_url.startswith("data:"):
+            _, encoded = video_url.split(",", 1)
+            return base64.b64decode(encoded)
+        if video_url.startswith(("http://", "https://")):
+            with httpx.Client(timeout=60.0) as http_client:
+                res = http_client.get(video_url)
+                if res.is_success:
+                    return res.content
+        if video_url.startswith("/"):
+            p = Path(__file__).resolve().parent.parent.parent.parent / "web" / "public" / video_url.lstrip("/")
+            if p.exists() and p.is_file():
+                return p.read_bytes()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not resolve video bytes from %s: %s", video_url[:60], e)
+    return None
+
+
+def _upload_video_to_files_api(client: "genai.Client", video_bytes: bytes) -> str:
+    """Uploads a user-supplied clip and returns its ACTIVE file URI.
+
+    Uploaded clips must be 10s or shorter, and the API rejects any audio track
+    in them — so an uploaded reference contributes picture only.
+    """
+    uploaded = client.files.upload(
+        file=io.BytesIO(video_bytes),
+        config={"mime_type": "video/mp4", "display_name": "blendeye_upload.mp4"},
     )
 
-    duration = max(4, min(8, duration_seconds))
+    file_name = getattr(uploaded, "name", None)
+    if not file_name:
+        raise RuntimeError("Files API upload returned no file name")
 
-    img_bytes, mime = resolve_image_bytes(image_url)
-    image_arg = None
-    if img_bytes:
-        from google.genai import types
-        image_arg = types.Image(image_bytes=img_bytes, mime_type=mime or "image/jpeg")
-        logger.info("Conditioning Veo 3.1 video generation with image reference (%d bytes, %s)", len(img_bytes), mime)
+    info = _wait_for_file_active(client, file_name)
+    uri = getattr(info, "uri", None) or getattr(uploaded, "uri", None)
+    if not uri:
+        raise RuntimeError("Files API upload returned no URI")
+
+    logger.info("Uploaded user clip to the Files API (%d bytes) for conversational editing", len(video_bytes))
+    return uri
+
+
+def _resolve_conversational_source(
+    client: "genai.Client",
+    *,
+    interaction_id: str | None,
+    video_url: str | None,
+    prompt: str,
+) -> dict[str, Any]:
+    """Builds the Interactions-API kwargs for acting on an existing clip.
+
+    Two routes to the same capability:
+      * `interaction_id` — a clip this service rendered, referenced by id with
+        no re-upload (the cheap multi-turn path).
+      * `video_url` — a user-supplied clip, uploaded through the Files API and
+        passed as a video input.
+    """
+    if interaction_id:
+        return {"input_payload": prompt, "previous_interaction_id": interaction_id}
+
+    raw = resolve_video_bytes(video_url)
+    if not raw:
+        raise ValueError(f"Could not read video bytes from '{video_url}'")
+
+    uri = _upload_video_to_files_api(client, raw)
+    return {"input_payload": [{"type": "video", "uri": uri}, {"type": "text", "text": prompt}]}
+
+
+def _persist_omni_video(video_bytes: bytes) -> str:
+    """Stores a rendered clip and returns a URL the frontend can play.
+
+    Supabase Storage first (works on any serverless host), then local disk for
+    dev, then inline base64 as a last resort so a render is never dropped.
+    """
+    filename = f"omni_{uuid.uuid4().hex[:12]}.mp4"
+
+    cloud_url = _upload_bytes_to_supabase(
+        video_bytes, filename, folder="videos", content_type="video/mp4"
+    )
+    if cloud_url:
+        return cloud_url
+
+    try:
+        target_dir = Path(__file__).resolve().parent.parent.parent.parent / "web" / "public" / "videos"
+        if target_dir.parent.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / filename).write_bytes(video_bytes)
+            logger.info("[Omni] Saved locally (no Supabase): /videos/%s", filename)
+            return f"/videos/{filename}"
+    except OSError as write_err:
+        logger.info("[Omni] Local disk write skipped: %s", write_err)
+
+    logger.info(
+        "[Omni] Packaged %d bytes as base64 data URI for cloud persistence via Next.js proxy",
+        len(video_bytes),
+    )
+    return f"data:video/mp4;base64,{base64.b64encode(video_bytes).decode('utf-8')}"
+
+
+def run_omni_video_interaction(
+    client: "genai.Client",
+    *,
+    input_payload: str | list[dict[str, Any]],
+    aspect_ratio: str = "16:9",
+    resolution: str | None = None,
+    previous_interaction_id: str | None = None,
+    task: str | None = None,
+    response_format: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Blocking Interactions API call for generation, editing or extension.
+
+    Synchronous by nature — callers on the event loop must hand this to
+    `asyncio.to_thread` (see `_start_omni_job` and the video sequencer).
+    """
+    if response_format is None:
+        response_format = _omni_response_format(aspect_ratio, resolve_video_resolution(resolution))
 
     kwargs: dict[str, Any] = {
-        "model": "models/veo-3.1-fast-generate-preview",
-        "prompt": cinematic_prompt,
-        "config": {
-            "aspect_ratio": aspect_ratio,
-            "duration_seconds": duration,
-        },
+        "model": get_settings().omni_video_model,
+        "input": input_payload,
+        "response_format": response_format,
     }
-    if image_arg is not None:
-        kwargs["image"] = image_arg
+    if previous_interaction_id:
+        kwargs["previous_interaction_id"] = previous_interaction_id
+    elif task and task in _OMNI_TASKS:
+        # `task` and `previous_interaction_id` are mutually exclusive — the API
+        # rejects the pair outright with "previous_interaction_id is not allowed
+        # when video task is set". A turn that references a prior interaction is
+        # already an edit/extension by construction, so the hint is redundant
+        # there anyway. It is still useful for a first turn that carries a video
+        # or image input and would otherwise be ambiguous.
+        kwargs["generation_config"] = {"video_config": {"task": task}}
 
-    op = client.models.generate_videos(**kwargs)
-    VEO_VIDEO_RENDERS_TOTAL.labels(aspect_ratio=aspect_ratio, status="dispatched").inc()
-    return op.name
+    interaction = client.interactions.create(**kwargs)
+    video_bytes = _omni_extract_video_bytes(client, interaction)
+
+    return {
+        "interaction_id": getattr(interaction, "id", None),
+        "video_url": _persist_omni_video(video_bytes),
+    }
+
+
+def _start_omni_job(
+    runner: Callable[[], dict[str, Any]],
+    *,
+    aspect_ratio: str = "16:9",
+) -> OmniVideoJob:
+    """Registers a job and runs `runner` — a blocking Omni call — off the event loop."""
+    _prune_omni_jobs()
+
+    job = OmniVideoJob(job_id=f"omni-{uuid.uuid4().hex[:12]}")
+    _OMNI_JOBS[job.job_id] = job
+
+    async def _execute() -> None:
+        job.status = "running"
+        job.updated_at = time.time()
+        try:
+            result = await asyncio.to_thread(runner)
+            job.video_url = result.get("video_url")
+            job.interaction_id = result.get("interaction_id")
+            job.status = "completed"
+            OMNI_VIDEO_RENDERS_TOTAL.labels(aspect_ratio=aspect_ratio, status="completed").inc()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Omni video job %s failed: %s", job.job_id, exc)
+            job.status = "error"
+            job.error = str(exc)
+            OMNI_VIDEO_RENDERS_TOTAL.labels(aspect_ratio=aspect_ratio, status="error").inc()
+        finally:
+            job.updated_at = time.time()
+
+    task = asyncio.create_task(_execute())
+    _OMNI_RUNNING_TASKS.add(task)
+    task.add_done_callback(_OMNI_RUNNING_TASKS.discard)
+    return job
+
+
+def _collect_conditioning_images(req: GenerateVideoRequest) -> list[tuple[bytes, str]]:
+    """Resolves the ordered conditioning images for a render.
+
+    First/last frame (interpolation) come first so the model sees them in the
+    documented order, followed by a general reference image.
+    """
+    images: list[tuple[bytes, str]] = []
+    for url in (req.first_frame_url, req.last_frame_url, req.image_url):
+        raw, mime = resolve_image_bytes(url)
+        if raw:
+            images.append((raw, mime or "image/jpeg"))
+    return images
 
 
 def _upload_bytes_to_supabase(
@@ -662,6 +1040,12 @@ def _upload_bytes_to_supabase(
                 },
             )
             if resp.status_code in (200, 201):
+                # Always hand back the permanent public URL. `cinema_assets` is a
+                # public bucket, so this carries no credential and never expires.
+                # A signed URL (`.../object/sign/...?token=<jwt>`) would embed a
+                # time-limited JWT that lapses days later and presents as data
+                # loss — the web layer's lib/media-url.ts normalises defensively,
+                # but the invariant has to hold here too.
                 public_url = f"{supabase_url.rstrip('/')}/storage/v1/object/public/{bucket}/{storage_path}"
                 logger.info("[Supabase] Uploaded %s to Supabase: %s", filename, public_url)
                 return public_url
@@ -673,154 +1057,161 @@ def _upload_bytes_to_supabase(
         return None
 
 
-def poll_veo_operation(client: "genai.Client", operation_name: str) -> dict[str, Any]:
-    """Single poll of a Veo operation; downloads video bytes and pushes to Supabase on completion.
-    Shared synchronous core behind both the HTTP status endpoint and the
-    sequencer's internal polling loop.
-    """
-    from google.genai import types
-
-    op = client.operations.get(types.GenerateVideosOperation(name=operation_name))
-    if op.done:
-        # Surface the operation's own error first — Veo reports rejected requests
-        # (e.g. malformed conditioning image, quota) here rather than in `response`.
-        if getattr(op, "error", None):
-            logger.error("Veo operation %s errored: %s", operation_name, op.error)
-            return {
-                "status": "error",
-                "error": f"Veo operation error: {op.error}",
-                "video_url": None,
-            }
-
-        video_url = None
-        if hasattr(op, "response") and op.response and hasattr(op.response, "generated_videos"):
-            videos = op.response.generated_videos
-            if videos and len(videos) > 0:
-                try:
-                    file_id = uuid.uuid4().hex[:12]
-                    filename = f"veo_{file_id}.mp4"
-
-                    # Download bytes into memory — no disk write needed
-                    buf = io.BytesIO()
-                    client.files.download(file=videos[0].video, destination=buf)
-                    video_bytes = buf.getvalue()
-
-                    if not video_bytes:
-                        raise RuntimeError("Veo download returned empty buffer")
-
-                    # Try Supabase first (works on Vercel / any serverless deploy)
-                    cloud_url = _upload_bytes_to_supabase(video_bytes, filename, folder="videos", content_type="video/mp4")
-                    if cloud_url:
-                        video_url = cloud_url
-                    else:
-                        # Fallback 1: write to local disk only if running locally and web directory exists
-                        try:
-                            target_dir = Path(__file__).resolve().parent.parent.parent.parent / "web" / "public" / "videos"
-                            if target_dir.parent.exists():
-                                target_dir.mkdir(parents=True, exist_ok=True)
-                                target_path = target_dir / filename
-                                target_path.write_bytes(video_bytes)
-                                video_url = f"/videos/{filename}"
-                                logger.info("[Veo] Saved locally (no Supabase): %s", video_url)
-                        except OSError as write_err:
-                            logger.info("[Veo] Local disk write skipped: %s", write_err)
-
-                        # Fallback 2: Base64 data URI (guarantees video is NEVER dropped!)
-                        # Next.js on Vercel intercepts data URIs and persists them directly into Supabase Storage
-                        if not video_url:
-                            b64_vid = base64.b64encode(video_bytes).decode("utf-8")
-                            video_url = f"data:video/mp4;base64,{b64_vid}"
-                            logger.info("[Veo] Packaged %d bytes as base64 data URI for cloud persistence via Next.js proxy", len(video_bytes))
-
-                except Exception as dl_err:  # noqa: BLE001
-                    logger.error("Could not retrieve Veo video: %s", dl_err)
-                    return {
-                        "status": "error",
-                        "error": f"Video finished rendering but could not be retrieved: {dl_err}",
-                        "video_url": None,
-                    }
-
-        if not video_url:
-            # Most common real cause of "completed but no video": Google's
-            # responsible-AI filter silently rejected the output (e.g. the
-            # conditioning image or prompt tripped a safety heuristic) rather
-            # than raising an error. Surface the actual reason when present
-            # instead of the previous unhelpful generic message.
-            filter_reasons = None
-            if hasattr(op, "response") and op.response:
-                count = getattr(op.response, "rai_media_filtered_count", 0) or 0
-                reasons = getattr(op.response, "rai_media_filtered_reasons", None)
-                if count or reasons:
-                    filter_reasons = reasons or ["content filtered, no reason given"]
-
-            error_detail = (
-                f"Veo filtered this render (responsible-AI check): {'; '.join(filter_reasons)}"
-                if filter_reasons
-                else "Veo operation completed but returned no video (no error or filter reason reported)"
-            )
-            logger.error("Veo operation %s: %s", operation_name, error_detail)
-            return {
-                "status": "error",
-                "error": error_detail,
-                "video_url": None,
-            }
-
-        return {"status": "completed", "video_url": video_url}
-    return {"status": "processing", "video_url": None}
-
-
 @router.post("/video", response_model=GenerateVideoResponse)
 async def generate_video(req: GenerateVideoRequest):
-    """Dispatch a cinematic scene render to Google Veo 3.1 video generation."""
+    """Start a cinematic Gemini Omni Flash render and return its job id.
+
+    Supports text-to-video, image-to-video, reference-to-video, and first/last
+    frame interpolation (supply both frame URLs).
+    """
     settings = get_settings()
-    api_key = settings.google_api_key
-    if not api_key:
+    if not settings.google_api_key:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY not configured")
 
-    client = genai.Client(api_key=api_key)
+    aspect_ratio = _resolve_aspect_ratio(req.aspect_ratio)
 
-    try:
-        operation_name = dispatch_veo_generation(
+    prompt = _build_omni_video_prompt(
+        req.prompt,
+        style_preset=req.style_preset,
+        character_name=req.character_name,
+    )
+    if req.first_frame_url and req.last_frame_url:
+        prompt = f"<FIRST_FRAME> <LAST_FRAME> {prompt}"
+
+    images = _collect_conditioning_images(req)
+    client = genai.Client(api_key=settings.google_api_key)
+
+    job = _start_omni_job(
+        lambda: run_omni_video_interaction(
             client,
-            prompt=req.prompt,
-            duration_seconds=req.duration_seconds,
-            aspect_ratio=req.aspect_ratio,
-            style_preset=req.style_preset,
-            character_name=req.character_name,
-            image_url=req.image_url,
-        )
-        return GenerateVideoResponse(
-            operation_name=operation_name,
-            prompt=req.prompt,
-            status="processing",
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.error("Veo dispatch failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"Video generation failed: {e}")
+            input_payload=build_video_input(prompt, images),
+            aspect_ratio=aspect_ratio,
+            resolution=req.resolution,
+            task=req.task,
+        ),
+        aspect_ratio=aspect_ratio,
+    )
+    return GenerateVideoResponse(
+        operation_name=job.job_id,
+        prompt=req.prompt,
+        status=job.status,
+    )
 
 
 @router.get("/video/status")
 async def get_video_status(operation_name: str):
-    """Check status of a Google Veo 3.1 video generation job."""
+    """Report the state of a Gemini Omni Flash render job."""
     if not operation_name:
         raise HTTPException(status_code=400, detail="Missing operation_name")
 
+    job = get_omni_video_job(operation_name)
+    if not job:
+        raise HTTPException(status_code=404, detail="Video job not found or expired")
+
+    return {
+        "status": job.status,
+        "video_url": job.video_url,
+        "interaction_id": job.interaction_id,
+        "error": job.error,
+    }
+
+
+@router.post("/video/edit", response_model=GenerateVideoResponse)
+async def edit_video(req: EditVideoRequest):
+    """Edit an existing clip through conversation.
+
+    Each turn builds on the source clip and returns a new render, preserving
+    everything the instruction doesn't mention. Simple instructions work best —
+    over-described edits tend to change more than intended.
+
+    Acts on either a clip this service rendered (`interaction_id`) or a
+    user-supplied one (`video_url`, uploaded via the Files API).
+    """
     settings = get_settings()
-    api_key = settings.google_api_key
-    if not api_key:
+    if not settings.google_api_key:
         raise HTTPException(status_code=500, detail="GOOGLE_API_KEY not configured")
 
-    client = genai.Client(api_key=api_key)
+    if not req.interaction_id and not req.video_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either interaction_id (a clip rendered here) or video_url (an uploaded clip)",
+        )
 
-    try:
-        return poll_veo_operation(client, operation_name)
-    except Exception as e:  # noqa: BLE001
-        logger.error("Veo status check failed: %s", e)
-        return {
-            "status": "error",
-            "error": str(e),
-            "video_url": None,
-        }
+    instruction = sanitize_video_prompt(req.instruction).strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="instruction is required")
+
+    aspect_ratio = _resolve_aspect_ratio(req.aspect_ratio)
+    client = genai.Client(api_key=settings.google_api_key)
+
+    def _run() -> dict[str, Any]:
+        source = _resolve_conversational_source(
+            client,
+            interaction_id=req.interaction_id,
+            video_url=req.video_url,
+            prompt=instruction,
+        )
+        return run_omni_video_interaction(
+            client,
+            **source,
+            task="edit",
+            response_format={"type": "video"},
+        )
+
+    job = _start_omni_job(_run, aspect_ratio=aspect_ratio)
+    return GenerateVideoResponse(
+        operation_name=job.job_id,
+        prompt=req.instruction,
+        status=job.status,
+    )
+
+
+@router.post("/video/extend", response_model=GenerateVideoResponse)
+async def extend_video(req: ExtendVideoRequest):
+    """Continue an existing clip from its tail.
+
+    Extension is append-only: Omni uses the last 10s of the source clip as
+    context and generates a 3-10s continuation, up to a 40s total. Prepending
+    or extending the middle of a clip is not supported by the model.
+
+    Acts on either a clip this service rendered (`interaction_id`) or a
+    user-supplied one (`video_url`, uploaded via the Files API). An uploaded
+    clip whose subject is talking cannot be extended with new dialogue.
+    """
+    settings = get_settings()
+    if not settings.google_api_key:
+        raise HTTPException(status_code=500, detail="GOOGLE_API_KEY not configured")
+
+    if not req.interaction_id and not req.video_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either interaction_id (a clip rendered here) or video_url (an uploaded clip)",
+        )
+
+    prompt = sanitize_video_prompt(req.prompt).strip() or "Continue the scene."
+    aspect_ratio = _resolve_aspect_ratio(req.aspect_ratio)
+    client = genai.Client(api_key=settings.google_api_key)
+
+    def _run() -> dict[str, Any]:
+        source = _resolve_conversational_source(
+            client,
+            interaction_id=req.interaction_id,
+            video_url=req.video_url,
+            prompt=prompt,
+        )
+        return run_omni_video_interaction(
+            client,
+            **source,
+            task="extend",
+            response_format={"type": "video"},
+        )
+
+    job = _start_omni_job(_run, aspect_ratio=aspect_ratio)
+    return GenerateVideoResponse(
+        operation_name=job.job_id,
+        prompt=req.prompt,
+        status=job.status,
+    )
 
 
 def _create_cinematic_fallback_score(duration_sec: float = 6.0, sample_rate: int = 24000) -> bytes:
