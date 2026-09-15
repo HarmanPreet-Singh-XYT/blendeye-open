@@ -12,7 +12,11 @@ export async function GET(req: NextRequest) {
   }
 
   const authUser = await getAuthUserFromHeader(req.headers.get("authorization"));
-  const talent = await fetchTalentFromSupabase(authUser?.id || null);
+  if (!authUser) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const talent = await fetchTalentFromSupabase(authUser.id);
   return NextResponse.json({ talent: talent || [], configured: true });
 }
 
@@ -33,7 +37,11 @@ export async function POST(req: NextRequest) {
   }
 
   const authUser = await getAuthUserFromHeader(req.headers.get("authorization"));
-  const success = await upsertTalentToSupabase(body, authUser?.id || null);
+  if (!authUser) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const success = await upsertTalentToSupabase(body, authUser.id);
   return NextResponse.json({ saved: success, name: body.name });
 }
 
@@ -46,6 +54,10 @@ export async function DELETE(req: NextRequest) {
   }
 
   const authUser = await getAuthUserFromHeader(req.headers.get("authorization"));
-  const success = await deleteTalentFromSupabase(name, authUser?.id || null);
+  if (!authUser) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const success = await deleteTalentFromSupabase(name, authUser.id);
   return NextResponse.json({ deleted: success, name });
 }

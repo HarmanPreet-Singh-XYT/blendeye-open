@@ -560,7 +560,7 @@ export function GenerationStudioView({
     setActiveTakeId(newTake.id);
     setActiveVideoUrl(url);
 
-    // Persist to project store and localStorage
+    // Persist to the cloud-backed project store
     const saved = saveVideoTake(effectiveProjectId, {
       title: newTake.title,
       cameraMotion,

@@ -101,7 +101,7 @@ export function VeoVideoDialog({
   screenplayText,
   genre,
 }: VeoVideoDialogProps) {
-  const effectiveProjectId = projectId || "vault-heist-demo";
+  const effectiveProjectId = projectId || "";
 
   const [selectedCharName, setSelectedCharName] = React.useState<string | null>(
     characterContext?.name || activeCharacterName || null
@@ -683,7 +683,7 @@ export function VeoVideoDialog({
                   </span>
                 </div>
                 <span className="text-[10px] font-mono text-muted-foreground">
-                  Takes persist to localStorage &amp; project store
+                  Takes persist to your project in the cloud
                 </span>
               </div>
 

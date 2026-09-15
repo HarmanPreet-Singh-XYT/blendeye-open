@@ -44,7 +44,7 @@ async def extract_last_frame(video_source: Path | str) -> bytes:
             temp_vid = Path(tmpdir) / "input.mp4"
             temp_vid.write_bytes(decoded_bytes)
             input_target = str(temp_vid)
-        elif isinstance(video_source, str) and (video_source.startswith("http://") or video_source.startswith("https://")):
+        elif isinstance(video_source, str) and video_source.startswith(("http://", "https://")):
             # Direct HTTP URL streamable by ffmpeg
             input_target = video_source
         else:

@@ -288,7 +288,7 @@ export function AuthDialog() {
               onClick={closeAuthModal}
               className="text-muted-foreground hover:text-foreground underline cursor-pointer"
             >
-              Continue as Guest
+              Maybe later
             </button>
           </div>
 

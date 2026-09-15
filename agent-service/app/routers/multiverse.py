@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -68,7 +67,7 @@ async def generate_multiverse_takes(req: MultiverseTakesRequest) -> MultiverseTa
         if takes_raw and isinstance(takes_raw, list):
             parsed_takes = [MultiverseTake(**t) for t in takes_raw]
             return MultiverseTakesResponse(takes=parsed_takes)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Failed to parse Multiverse Takes JSON from Gemini output: %s", e)
 
     # High-quality fallback takes grounded in the user's characters & scene

@@ -1,6 +1,5 @@
-"""ClickHouse MCP toolset — the piece that satisfies the hackathon's
-ClickHouse track requirement literally: "actively use ClickHouse at runtime
-via the official ClickHouse MCP server (mcp-clickhouse)". This launches the
+"""ClickHouse MCP toolset — gives agents real ClickHouse access at runtime
+via the official ClickHouse MCP server (mcp-clickhouse). This launches the
 official `mcp-clickhouse` console script as a stdio subprocess and wires it
 into an ADK agent as a callable toolset, so an agent (e.g. the hot-seat
 interrogator, per idea.md's grounding-flourish role) can issue real
@@ -11,7 +10,7 @@ clickhouse_store.py (clickhouse-connect direct driver) remains the primary
 path for the Story Event Engine's own reads/writes, since that traffic is
 our own application logic, not agent tool-use — using MCP for literally
 every internal query would be needless overhead. This module is reserved
-for the case that actually matters for the track requirement: an agent
+for the case that actually matters: an agent
 deciding, mid-conversation, to query ClickHouse itself.
 """
 

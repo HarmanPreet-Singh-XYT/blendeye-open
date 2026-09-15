@@ -6,8 +6,7 @@
 
 <p align="center">
   <strong>The Autonomous AI Film Director Studio, Production Planner & Pre-Shoot Simulator.</strong><br>
-  <em>Plan the vision. Simulate the performance. Direct the film before shooting a single frame.</em><br>
-  <strong>Google Cloud Agentic Cinema Hackathon — ClickHouse Partner Track</strong>
+  <em>Plan the vision. Simulate the performance. Direct the film before shooting a single frame.</em>
 </p>
 
 <p align="center">
@@ -28,7 +27,7 @@
 
 ## 📽️ Table of Contents
 
-1. [Hackathon Submission Compliance](#-hackathon-submission-compliance) — see also [JUDGE_TESTING.md](JUDGE_TESTING.md)
+1. [Runtime Integrations](#-runtime-integrations)
 2. [What is BlendEye? (The Director's Operating System)](#-what-is-blendeye-the-directors-operating-system)
 3. [The Problem: The $100M "Fix It in Post" Fallacy](#-the-problem-the-100m-fix-it-in-post-fallacy)
 4. [The 3 Core Directorial Pillars](#-the-3-core-directorial-pillars)
@@ -61,7 +60,7 @@
      - [Studio Version Control & Takes VCS](#5-studio-version-control--takes-vcs)
      - [Character Lab & Global Talent Vault](#6-character-lab--global-talent-vault)
      - [Production Asset Hub & Supabase Storage](#7-production-asset-hub--supabase-storage)
-7. [ClickHouse Integration (Partner Track Centerpiece)](#-clickhouse-integration-partner-track-centerpiece)
+7. [ClickHouse Integration](#-clickhouse-integration)
 8. [Google Cloud AI & Gemini Multimodal Suite](#-google-cloud-ai--gemini-multimodal-suite)
 9. [Repository Structure](#-repository-structure)
 10. [Local Development & Quickstart](#-local-development--quickstart)
@@ -73,22 +72,19 @@
 
 ---
 
-## ✅ Hackathon Submission Compliance
+## ✅ Runtime Integrations
 
-| Requirement | Status | Verification Reference |
+| Integration | Status | Where it runs |
 | :--- | :--- | :--- |
-| **Hosted, publicly reachable project** | ✅ Deployed | [blendeye.harmanita.com](https://blendeye.harmanita.com) |
-| **Google Cloud AI used at runtime** | ✅ Active | `google-genai` + `google-adk` invoked across `app/routers/media.py`, `app/services/video_sequencer.py`, `app/agents/*.py` — real runtime calls to `gemini-3.7-flash`, `gemini-3.1-flash-tts-preview`, and `veo-3.1-fast-generate-preview`. |
-| **ClickHouse used at runtime via `mcp-clickhouse`** | ✅ Active | `app/services/clickhouse_mcp.py` runs the official `mcp-clickhouse` server as an `McpToolset` on the live Showrunner agent (`app/agents/showrunner.py`) for commercial comps. |
+| **Hosted, publicly reachable deployment** | ✅ Live | [blendeye.harmanita.com](https://blendeye.harmanita.com) |
+| **Google Cloud AI** | ✅ Active | `google-genai` + `google-adk` invoked across `app/routers/media.py`, `app/services/video_sequencer.py`, `app/agents/*.py` — runtime calls to `gemini-3.7-flash`, `gemini-3.1-flash-tts-preview`, and `veo-3.1-fast-generate-preview`. |
+| **ClickHouse via `mcp-clickhouse`** | ✅ Active | `app/services/clickhouse_mcp.py` runs the official `mcp-clickhouse` server as an `McpToolset` on the live Showrunner agent (`app/agents/showrunner.py`) for commercial comps. |
 | **ClickHouse Cloud / self-hosted cluster** | ✅ Active | Production deployment connects to **ClickHouse Cloud** with sub-3ms query latencies. |
-| **Parallel Web Systems used at runtime** | ✅ Active | Official `parallel-web` Python SDK (v1.3.3) invoked in `app/services/parallel_search.py`, `app/routers/location_research.py`, and `app/agents/showrunner.py` for real-time location scouting and market comps. |
-| **Grafana Labs used at runtime via `mcp-grafana`** | ✅ Active | Official `grafana/mcp-grafana` server (v1.3.0) and native Prometheus exporter at `/observability/metrics` powering real-time PromQL monitoring and agent pipeline health. |
-| **IBM Partner Track (Built with IBM Bob IDE)** | ✅ Compliant | Developed and coded using the **IBM Bob IDE** as the primary development workspace, successfully scaling and managing a production monorepo of **over 85,000+ lines of code** across multi-agent prompt engineering, Next.js/FastAPI contracts, and telemetry middleware. |
-| **Runs on web** | ✅ Active | Next.js 16 App Router frontend with Tailwind CSS v4, Lucide icons, and `@xyflow/react`. |
-| **Open-source license detectable in repo root** | ✅ Active | [MIT License](LICENSE) |
-| **No non-Google-Cloud AI vendor at runtime** | ✅ Compliant | Exclusively Google Cloud AI SDKs (`google-genai`, `google-adk`); zero non-Google AI SDK imports. |
-
-📋 **[Judge Testing Guide (JUDGE_TESTING.md)](JUDGE_TESTING.md)** — a 5-minute, step-by-step walkthrough to verify the ClickHouse time-gate mechanic and Google Cloud AI integrations live on the hosted deployment, no code reading required.
+| **Parallel Web Systems** | ✅ Active | Official `parallel-web` Python SDK (v1.3.3) invoked in `app/services/parallel_search.py`, `app/routers/location_research.py`, and `app/agents/showrunner.py` for real-time location scouting and market comps. |
+| **Grafana Labs via `mcp-grafana`** | ✅ Active | Official `grafana/mcp-grafana` server (v1.3.0) and native Prometheus exporter at `/observability/metrics` powering real-time PromQL monitoring and agent pipeline health. |
+| **Web frontend** | ✅ Active | Next.js 16 App Router frontend with Tailwind CSS v4, Lucide icons, and `@xyflow/react`. |
+| **License** | ✅ Active | [MIT License](LICENSE) |
+| **AI SDK surface** | ✅ Single-vendor | Only Google Cloud AI SDKs (`google-genai`, `google-adk`) are imported; no other AI vendor SDKs are present. |
 
 ---
 
@@ -281,7 +277,8 @@ The Director's central pre-production planning floor, linking high-level script 
 
 #### 8. International Box Office & Territory Heatmap
 - **D3 Geo / TopoJSON Interactive Global Map**: Visualizes projected box-office appeal across North America, Europe, Asia-Pacific, Latin America, and MENA.
-- **ClickHouse Grounded Benchmarks**: Queries historical performance from ClickHouse's `cinematic_precedents` table (*Heat*, *Sicario*, *Alien*, *Blade Runner*) to project territorial audience retention percentages.
+- **ClickHouse Grounded Benchmarks**: Queries ClickHouse's `cinematic_precedents` table (*Heat*, *Sicario*, *Alien*, *Mad Max: Fury Road*) to drive the territorial audience-retention projections.
+- **Data provenance — read before quoting a number**: `cinematic_precedents` is **hand-authored demo benchmark data**, seeded from `agent-service/app/services/clickhouse_store.py`. The film titles and craft notes are real; the `tension_level` and `audience_retention_pct` values are illustrative figures chosen by hand, **not** measured box-office or audience-retention data from any dataset. They exist so the market/territory and Showrunner views have stable, non-hallucinated rows to render. Treat the percentages as placeholder values, not as research.
 
 ---
 
@@ -349,7 +346,7 @@ The Director's autonomous executive partner — providing commercial market comp
 
 #### 1. Centralized Showrunner AI (`mcp-clickhouse` Grounded)
 - **Omniscient Creative Co-Pilot**: An autonomous executive showrunner analyzing dramatic subtext, narrative pacing, and structural reversals.
-- **Live Tool Calling via `mcp-clickhouse`**: The Showrunner queries ClickHouse's `cinematic_precedents` table via the official Model Context Protocol (MCP) server mid-conversation, citing real commercial benchmarks and historical audience retention curves to ground creative recommendations.
+- **Live Tool Calling via `mcp-clickhouse`**: The Showrunner queries ClickHouse's `cinematic_precedents` table via the official Model Context Protocol (MCP) server mid-conversation, citing stored commercial comps and retention benchmarks to ground creative recommendations. (See the provenance note in the ClickHouse section below — these rows are hand-authored demo data.)
 - **Interactive Script Doctoring**: Apply targeted rewrites, heighten conflict, or resolve third-act bottlenecks directly through natural conversation.
 
 #### 2. Studio AI Commander (Natural Language Action Runner)
@@ -382,7 +379,7 @@ The Director's autonomous executive partner — providing commercial market comp
 
 ---
 
-## ⚡ ClickHouse Integration (Partner Track Centerpiece)
+## ⚡ ClickHouse Integration
 
 ClickHouse is not a passive database in BlendEye — **it is the fundamental data engine powering the time-gate mechanic**:
 
@@ -441,7 +438,15 @@ ORDER BY event_timestamp;
 ```
 
 ### 3. `cinematic_precedents` Table (Commercial Grounding)
-Powers box-office intelligence, territorial comps, and audience retention metrics cited by the Showrunner:
+Powers the territorial comps and retention metrics cited by the Showrunner.
+
+> **Provenance:** this table is seeded from hand-authored demo rows
+> (`_DEFAULT_PRECEDENTS` in `agent-service/app/services/clickhouse_store.py`).
+> The film titles and craft notes are real; `tension_level` and
+> `audience_retention_pct` are illustrative hand-picked values, not measured
+> box-office data. They give the market and Showrunner views stable,
+> non-hallucinated rows to render — they are not research.
+
 ```sql
 CREATE TABLE IF NOT EXISTS cinematic_precedents (
     genre String,
@@ -500,7 +505,7 @@ BlendEye harnesses Google Cloud's multimodal model family:
 | **Video Generation** | `veo-3.1-fast-generate-preview` | 2.39:1 widescreen video renders, camera motion control, and sequential multi-shot chained generation with last-frame pixel conditioning |
 | **Visual Concepts** | `gemini-3.1-flash-image` / `gemini-3-pro-image` | Anamorphic storyboard keyframes, character wardrobe portraits, and director lookbook moodboards |
 
-Location scouting grounding is powered by **Parallel Web Systems** (primary) — see the Parallel Web Systems Partner Track Integration section — with ADK's native Google Search tool attached only as a fallback if Parallel is unconfigured or unreachable.
+Location scouting grounding is powered by **Parallel Web Systems** (primary) — see the Parallel Web Systems Integration section — with ADK's native Google Search tool attached only as a fallback if Parallel is unconfigured or unreachable.
 
 ---
 
@@ -509,9 +514,7 @@ Location scouting grounding is powered by **Parallel Web Systems** (primary) —
 ```
 agentic_cinema/
 ├── README.md                          # Comprehensive project documentation
-├── JUDGE_TESTING.md                   # 5-minute hackathon evaluation guide
-├── DEMO_VIDEO_SCRIPT.md               # 3-minute hackathon walkthrough video script
-├── DEVPOST_SUBMISSION.md              # Official hackathon submission write-up
+├── DEMO_VIDEO_SCRIPT.md               # 3-minute product walkthrough video script
 ├── docker-compose.yml                 # Local ClickHouse & full-stack container profiles
 ├── .env.example                       # Root environment variable template
 ├── supabase/
@@ -563,10 +566,10 @@ agentic_cinema/
     │   │   └── clickhouse-inspector.tsx   # Live SQL telemetry console
     │   └── ui/                        # shadcn/ui design primitives
     └── lib/                           # Stores, version control & client SDKs
-        ├── project-store.ts           # Benchmark projects & reactive local state
+        ├── project-store.ts           # Cloud-backed project/talent/scratchpad cache (no browser storage)
         ├── studio-commander.ts        # AI Studio Commander multi-step action runner
         ├── supabase-store.ts          # Postgres/Supabase synchronization layer
-        └── asset-store.ts             # Media asset library state
+        └── asset-store.ts             # Media asset library state (cloud cache)
 ```
 
 ---
@@ -578,9 +581,9 @@ agentic_cinema/
 - **Python**: v3.12+ with [uv](https://docs.astral.sh/uv/) installed
 - **Docker**: For running ClickHouse locally
 - **Google Cloud API Key**: A valid `GOOGLE_API_KEY` enabled for Gemini models
-- **Parallel Web Systems API Key**: `PARALLEL_API_KEY` for live location scouting search grounding (Parallel Partner Track)
-- **Grafana Token**: (Optional) `GRAFANA_SERVICE_ACCOUNT_TOKEN` and `GRAFANA_URL` for MCP Grafana observability (Grafana Partner Track)
-- **Supabase Account**: (Optional for demo, recommended for persistent multi-user accounts and media storage)
+- **Parallel Web Systems API Key**: `PARALLEL_API_KEY` for live location scouting search grounding
+- **Grafana Token**: (Optional) `GRAFANA_SERVICE_ACCOUNT_TOKEN` and `GRAFANA_URL` for MCP Grafana observability
+- **Supabase Account**: **Required** — BlendEye is cloud-only and login-gated. Without it there is no persistence and no way to sign in.
 
 ---
 
@@ -618,11 +621,11 @@ cp .env.example .env
 
 Edit `agent-service/.env` with your API keys and configuration:
 ```env
-# Google Cloud AI (Required per Hackathon Rules)
+# Google Cloud AI
 GOOGLE_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.7-flash
 
-# ClickHouse Database (Required Partner Track Integration)
+# ClickHouse Database
 CLICKHOUSE_HOST=localhost
 CLICKHOUSE_PORT=8123
 CLICKHOUSE_USER=default
@@ -630,10 +633,10 @@ CLICKHOUSE_PASSWORD=devpassword
 CLICKHOUSE_DATABASE=default
 CLICKHOUSE_SECURE=false
 
-# Parallel Web Systems (Partner Track Integration — Real-Time Search Grounding)
+# Parallel Web Systems (Real-Time Search Grounding)
 PARALLEL_API_KEY=your_parallel_api_key_here
 
-# Grafana Labs (Partner Track Integration — Observability & MCP)
+# Grafana Labs (Observability & MCP)
 GRAFANA_URL=https://your-stack.grafana.net
 GRAFANA_SERVICE_ACCOUNT_TOKEN=your_grafana_service_account_token_here
 
@@ -685,15 +688,36 @@ Open [http://localhost:3000](http://localhost:3000) in your browser!
 
 ---
 
-### Step 5: (Optional) Initialize Supabase Database
+### Step 5: (Required) Initialize Supabase Database
 
-If using your own Supabase project:
+BlendEye is cloud-only and login-gated, so Supabase is **required** — there is no local/offline mode.
 1. Navigate to the SQL Editor in the Supabase Dashboard.
 2. Paste the contents of `supabase/schema.sql` and run.
 3. This provisions:
    - `projects`, `scratchpad_notes`, `talent_vault`, `project_snapshots`, `generation_cache`, and `assets` tables.
-   - Row-Level Security (RLS) policies for authenticated and demo guest users.
+   - Row-Level Security (RLS) policies scoping every row to its owning account. Anonymous clients get no access to any of these tables.
    - The `cinema_assets` storage bucket for media uploads.
+4. Upgrading an existing database? Run `supabase/cleanup-guest-data.sql` once to remove the
+   orphaned `user_id IS NULL` demo rows from the previous anonymous mode.
+
+---
+
+## 🔐 Storage & Access Model
+
+BlendEye keeps **exactly one copy of your work, in the cloud**.
+
+- **No browser persistence.** Projects, talent vault entries, scratchpad notes, asset records,
+  chat transcripts and version history are never written to `localStorage`/`sessionStorage`. The
+  app hydrates an in-memory cache from Supabase on sign-in and drops it on sign-out, so one
+  account's work can never leak into the next session on the same browser. Legacy keys from
+  earlier versions are purged automatically on first load.
+- **Sign-in required.** `/dashboard` and everything under `/studio/**` redirect to `/login` when
+  there is no session. The marketing surfaces (`/`, `/showcase`, `/canvas-demo`) stay public.
+- **No demo/seed data.** New accounts start with an empty slate. The *Load Demo: The Vault
+  Protocol* button on the dashboard is a convenience preset — it pre-fills the New Production
+  wizard and runs the normal generation + sharding pipeline into your own account.
+- **The one exception** is Supabase's own auth client session (stored under `sb-*-auth-token`),
+  which is what keeps you signed in across a refresh. That is Supabase's storage, not app data.
 
 ---
 
@@ -723,7 +747,7 @@ docker compose --profile full up --build
 | `GOOGLE_CLOUD_PROJECT` | Agent Service | Google Cloud Project ID (when using Vertex AI) | *(Optional)* |
 | `GOOGLE_CLOUD_LOCATION` | Agent Service | Google Cloud Region (when using Vertex AI) | `us-central1` |
 
-### ClickHouse Database (Partner Track Centerpiece)
+### ClickHouse Database
 | Variable | Scope | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `CLICKHOUSE_HOST` | Agent Service | Hostname of ClickHouse server (local or Cloud) | `localhost` / `clickhouse` |
@@ -733,26 +757,26 @@ docker compose --profile full up --build
 | `CLICKHOUSE_DATABASE` | Agent Service | ClickHouse database name | `default` |
 | `CLICKHOUSE_SECURE` | Agent Service | Enable TLS encryption (must be `true` for ClickHouse Cloud) | `false` |
 
-### Parallel Web Systems (Partner Track Integration)
+### Parallel Web Systems
 | Variable | Scope | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `PARALLEL_API_KEY` | Agent Service | Parallel Web Systems Search API Key for real-time location scouting and municipal fee lookups | *(Required for live search)* |
 
-### Grafana Labs (Partner Track Integration)
+### Grafana Labs
 | Variable | Scope | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `GRAFANA_URL` | Agent Service | Hosted Grafana instance URL for PromQL telemetry | `https://your-stack.grafana.net` |
 | `GRAFANA_SERVICE_ACCOUNT_TOKEN` | Agent Service | Service account token for official `mcp-grafana` server | *(Optional)* |
 
-### Supabase (State, Auth & Media Cloud Storage)
+### Supabase (Auth, Cloud State & Media Storage — required)
 | Variable | Scope | Description | Default |
 | :--- | :--- | :--- | :--- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Web App | Public Supabase project URL | *(Optional / Demo)* |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Web App | Modern Supabase publishable client API key | *(Optional / Demo)* |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Web App | Legacy Supabase anonymous client API key | *(Optional / Demo)* |
-| `SUPABASE_SECRET_KEY` | Web App / Agent Service | Supabase secret key / service role key for RLS bypass | *(Optional / Demo)* |
-| `SUPABASE_SERVICE_ROLE_KEY` | Web App | Legacy Supabase service role secret key | *(Optional / Demo)* |
-| `SUPABASE_URL` | Agent Service | Supabase project URL for persisting Veo videos to storage | *(Optional / Demo)* |
+| `NEXT_PUBLIC_SUPABASE_URL` | Web App | Public Supabase project URL | *(Required)* |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Web App | Modern Supabase publishable client API key | *(Required)* |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Web App | Legacy alias for the publishable client key | *(Optional)* |
+| `SUPABASE_SECRET_KEY` | Web App / Agent Service | Supabase secret key / service role key for RLS bypass | *(Required for uploads & cache)* |
+| `SUPABASE_SERVICE_ROLE_KEY` | Web App | Legacy alias for the service role secret key | *(Optional)* |
+| `SUPABASE_URL` | Agent Service | Supabase project URL for persisting Veo videos to storage | *(Optional)* |
 
 ### Networking & Runtime Environment
 | Variable | Scope | Description | Default |
@@ -805,5 +829,4 @@ BlendEye comes out of the box with curated benchmark productions ready for immed
 ## 📄 License & Acknowledgments
 
 - Released under the **[MIT License](LICENSE)**.
-- Built for the **Google Cloud Agentic Cinema Hackathon** (ClickHouse Partner Track).
 - Powered by [Google Cloud AI](https://cloud.google.com/vertex-ai) and [ClickHouse](https://clickhouse.com/).

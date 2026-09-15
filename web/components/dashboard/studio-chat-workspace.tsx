@@ -67,8 +67,9 @@ interface StudioChatWorkspaceProps {
   onOpenToolbox: () => void;
 }
 
-const STORAGE_CHAT_KEY = "agentic_cinema_dashboard_chat_history_v4";
-const STORAGE_ACTIVE_PROJECT_KEY = "agentic_cinema_dashboard_active_project_id_v4";
+// Chat transcripts are session state, not documents: they are intentionally
+// not persisted to the browser (see the storage note in lib/project-store.ts).
+// The durable artifacts a chat produces live in the project itself.
 
 export type AtmosphereKey = "screening" | "cyberpunk" | "orbital" | "vault" | "minimal";
 
@@ -859,20 +860,8 @@ export function StudioChatWorkspace({
 }: StudioChatWorkspaceProps) {
   const router = useRouter();
 
-  // Chat messages: loads existing session or defaults to empty (clean hero view)
-  const [messages, setMessages] = React.useState<DashboardChatMessage[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const saved = localStorage.getItem(STORAGE_CHAT_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (err) {
-      console.error("Failed to load dashboard chat history:", err);
-    }
-    return [];
-  });
+  // Chat messages live for the session only — a refresh starts a clean slate.
+  const [messages, setMessages] = React.useState<DashboardChatMessage[]>([]);
 
   // Active project bound to chat: defaults to null so user is never locked to an old slate
   const [activeProjectId, setActiveProjectId] = React.useState<string | null>(null);
@@ -891,19 +880,6 @@ export function StudioChatWorkspace({
 
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-
-  // Sync messages to localStorage
-  React.useEffect(() => {
-    try {
-      if (messages.length > 0) {
-        localStorage.setItem(STORAGE_CHAT_KEY, JSON.stringify(messages));
-      } else {
-        localStorage.removeItem(STORAGE_CHAT_KEY);
-      }
-    } catch (err) {
-      console.error("Failed to save dashboard chat history:", err);
-    }
-  }, [messages]);
 
   // Auto-scroll on new messages
   React.useEffect(() => {
@@ -926,10 +902,6 @@ export function StudioChatWorkspace({
     setMessages([]);
     setActiveProjectId(null);
     setInput("");
-    try {
-      localStorage.removeItem(STORAGE_CHAT_KEY);
-      localStorage.removeItem(STORAGE_ACTIVE_PROJECT_KEY);
-    } catch {}
   };
 
   // Check mention triggers

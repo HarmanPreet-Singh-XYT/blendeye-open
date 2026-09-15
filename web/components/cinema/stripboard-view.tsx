@@ -43,29 +43,15 @@ interface CachedStripboard {
 
 const stripboardCache = new Map<string, CachedStripboard>();
 
+// Session-scoped cache only. This used to be mirrored into sessionStorage;
+// the app no longer persists working data in the browser, so a refresh
+// re-derives the stripboard.
 function getCachedStripboard(projectId: string): CachedStripboard | null {
-  const inMem = stripboardCache.get(projectId);
-  if (inMem) return inMem;
-  if (typeof window !== "undefined") {
-    try {
-      const raw = sessionStorage.getItem(`stripboard_${projectId}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        stripboardCache.set(projectId, parsed);
-        return parsed;
-      }
-    } catch {}
-  }
-  return null;
+  return stripboardCache.get(projectId) ?? null;
 }
 
 function setCachedStripboard(projectId: string, data: CachedStripboard) {
   stripboardCache.set(projectId, data);
-  if (typeof window !== "undefined") {
-    try {
-      sessionStorage.setItem(`stripboard_${projectId}`, JSON.stringify(data));
-    } catch {}
-  }
 }
 
 export function StripboardView({
@@ -74,7 +60,7 @@ export function StripboardView({
   screenplayText = "",
   scenes = [],
   className,
-  projectId = "vault-heist-demo",
+  projectId = "",
   budgetPerShootDay,
   currency,
 }: StripboardViewProps) {

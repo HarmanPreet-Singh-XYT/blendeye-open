@@ -11,12 +11,12 @@ export function ClickHouseDeepDive() {
       {/* Section Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border pb-5">
         <div className="space-y-1">
-          <SlateLabel>ClickHouse Partner Track Integration</SlateLabel>
+          <SlateLabel>ClickHouse Integration</SlateLabel>
           <h2 className="text-2xl md:text-3xl font-heading font-bold tracking-tight text-foreground">
             Why ClickHouse Powers the Core Time-Gate Data Plane
           </h2>
           <p className="text-xs md:text-sm text-muted-foreground max-w-2xl">
-            ClickHouse is not a passive cache or compliance checkbox — it is the fundamental data structure enabling sub-millisecond timeline interrogation without character hallucinations.
+            ClickHouse is not a passive cache — it is the fundamental data structure enabling sub-millisecond timeline interrogation without character hallucinations.
           </p>
         </div>
 

@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from google import genai
@@ -32,7 +31,6 @@ from app.config import get_settings
 from app.services.observability import (
     AUDIO_TTS_SYNTHESIS_SECONDS,
     IMAGEN_STORYBOARDS_TOTAL,
-    VEO_GENERATION_SECONDS,
     VEO_VIDEO_RENDERS_TOTAL,
 )
 from app.services.prompt_sanitizer import sanitize_character_name_for_veo, sanitize_veo_prompt
@@ -325,7 +323,7 @@ def _parse_screenplay_dialogue(text: str) -> list[tuple[str, str]]:
         line = raw.strip()
         if not line:
             continue
-        if line.startswith("INT.") or line.startswith("EXT."):
+        if line.startswith(("INT.", "EXT.")):
             current_speaker = ""
             continue
         if re.match(r"^[A-Z0-9\s.]{2,25}$", line) and not line.startswith("SCENE") and " - " not in line:
@@ -433,7 +431,7 @@ async def generate_multi_tts(req: GenerateMultiSpeakerTTSRequest):
                         if part.inline_data and part.inline_data.data:
                             accumulated_pcm.extend(part.inline_data.data)
                             break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Single-speaker chunk TTS failed: %s", e)
                 continue
 
@@ -477,7 +475,7 @@ async def generate_multi_tts(req: GenerateMultiSpeakerTTSRequest):
                             # Add natural 300ms breathing silence between conversation blocks
                             accumulated_pcm.extend(b"\x00" * int(24000 * 2 * 0.3))
                             break
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Multi-speaker chunk TTS failed: %s", e)
                 # Fallback to line by line
                 for spk, txt in chunk:
@@ -501,8 +499,8 @@ async def generate_multi_tts(req: GenerateMultiSpeakerTTSRequest):
                                 if part.inline_data and part.inline_data.data:
                                     accumulated_pcm.extend(part.inline_data.data)
                                     accumulated_pcm.extend(b"\x00" * int(24000 * 2 * 0.25))
-                    except Exception:
-                        pass
+                    except Exception as e:  # noqa: BLE001
+                        logger.debug("Skipping one multi-speaker TTS part: %s", e)
 
     if not accumulated_pcm:
         raise HTTPException(status_code=502, detail="Multi-speaker TTS synthesis returned no audio data")
@@ -532,7 +530,7 @@ def resolve_image_bytes(image_url: str | None) -> tuple[bytes | None, str | None
             header, encoded = image_url.split(",", 1)
             mime = header.split(";")[0].replace("data:", "")
             return base64.b64decode(encoded), mime
-        if image_url.startswith("http://") or image_url.startswith("https://"):
+        if image_url.startswith(("http://", "https://")):
             import httpx
             with httpx.Client(timeout=10.0) as http_client:
                 res = http_client.get(image_url)
@@ -545,7 +543,7 @@ def resolve_image_bytes(image_url: str | None) -> tuple[bytes | None, str | None
             if p.exists() and p.is_file():
                 mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
                 return p.read_bytes(), mime
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Could not resolve image bytes from %s: %s", image_url[:60], e)
     return None, None
 
@@ -670,7 +668,7 @@ def _upload_bytes_to_supabase(
             else:
                 logger.error("[Supabase] Upload failed (%s): %s", resp.status_code, resp.text[:300])
                 return None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.error("[Supabase] Upload exception: %s", exc)
         return None
 
@@ -734,7 +732,7 @@ def poll_veo_operation(client: "genai.Client", operation_name: str) -> dict[str,
                             video_url = f"data:video/mp4;base64,{b64_vid}"
                             logger.info("[Veo] Packaged %d bytes as base64 data URI for cloud persistence via Next.js proxy", len(video_bytes))
 
-                except Exception as dl_err:
+                except Exception as dl_err:  # noqa: BLE001
                     logger.error("Could not retrieve Veo video: %s", dl_err)
                     return {
                         "status": "error",
@@ -1077,14 +1075,14 @@ async def stream_music(req: GenerateMusicRequest):
                 for event in stream:
                     if getattr(event, "event_type", "") == "content.delta":
                         delta_dict = event.delta if isinstance(event.delta, dict) else getattr(event, "delta", {})
-                        if "text" in delta_dict and delta_dict["text"]:
+                        if delta_dict.get("text"):
                             yield f"data: {json.dumps({'type': 'text_delta', 'text': delta_dict['text']})}\n\n"
-                        if "data" in delta_dict and delta_dict["data"]:
+                        if delta_dict.get("data"):
                             yield f"data: {json.dumps({'type': 'audio_delta', 'data': delta_dict['data'], 'mime_type': delta_dict.get('mime_type', 'audio/mp3')})}\n\n"
 
                 yield f"data: {json.dumps({'type': 'done', 'model': model_name, 'duration_sec': target_duration})}\n\n"
                 return
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Lyria streaming failed: %s, falling back to local simulation", e)
                 yield f"data: {json.dumps({'type': 'status', 'message': f'Streaming fallback ({e})'})}\n\n"
 

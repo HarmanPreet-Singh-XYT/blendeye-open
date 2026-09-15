@@ -1,4 +1,3 @@
-import logging
 import time
 from contextlib import asynccontextmanager
 
@@ -9,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 try:
     from google.genai.models import Models
     Models._logged_afc_warning = True
-except Exception:
+except Exception:  # noqa: BLE001, S110 - best-effort SDK import; nothing actionable if it fails
     pass
 
 from app.config import get_settings
@@ -25,6 +24,7 @@ from app.routers import (
     market_viability,
     media,
     multiverse,
+    observability,
     production,
     scene_rewrite,
     script,
@@ -34,9 +34,9 @@ from app.routers import (
     showrunner,
     style_extractor,
     video_sequence,
-    observability,
 )
 from app.services.clickhouse_store import get_clickhouse_store
+from app.services.observability import get_mcp_status
 
 
 @asynccontextmanager
@@ -103,13 +103,16 @@ _process_start_time = time.time()
 
 
 @app.get("/metrics")
-async def metrics() -> dict[str, object]:
-    """Expose studio production telemetry for Grafana Labs partner dashboard.
+def metrics() -> dict[str, object]:
+    """Expose studio production telemetry for the Grafana Labs dashboard.
 
     Queries ClickHouse directly for real row counts rather than reporting
     static numbers, so this reflects the actual story_events/precedents
     data in the connected cluster. Falls back to a clearly-flagged estimate
     only if ClickHouse itself is unreachable.
+
+    Declared `def` (not `async def`): clickhouse-connect is synchronous, so
+    FastAPI runs this in its threadpool instead of blocking the event loop.
     """
     uptime_seconds = round(time.time() - _process_start_time)
 
@@ -130,13 +133,22 @@ async def metrics() -> dict[str, object]:
         store.client.query("SELECT 1")
         query_latency_ms = round((time.time() - query_start) * 1000, 2)
 
+        # `clickhouse_mcp` reflects whether the mcp-clickhouse console script
+        # is actually resolvable — a successful clickhouse-connect query proves
+        # the data plane is up, not that the MCP server the Showrunner agent
+        # launches as a subprocess is available. The two are reported separately.
+        mcp = get_mcp_status()
+        mcp_clickhouse = "online" if mcp["mcp_clickhouse"]["verified"] else "degraded"
+
         return {
             "studio": "BlendEye Executive Backlot",
-            "partner_integrations": ["ClickHouse Cloud"],
+            "integrations": ["ClickHouse Cloud"],
             "mcp_servers": {
-                "clickhouse_mcp": "online",
-                "state": "operational",
+                "clickhouse_mcp": mcp_clickhouse,
+                "state": "operational" if mcp_clickhouse == "online" else "degraded",
             },
+            "clickhouse_store": "online",
+            "mcp_status": mcp,
             "telemetry": {
                 "uptime_seconds": uptime_seconds,
                 "clickhouse_ping_ms": query_latency_ms,
@@ -148,11 +160,13 @@ async def metrics() -> dict[str, object]:
     except Exception as exc:  # noqa: BLE001
         return {
             "studio": "BlendEye Executive Backlot",
-            "partner_integrations": ["ClickHouse Cloud"],
+            "integrations": ["ClickHouse Cloud"],
             "mcp_servers": {
                 "clickhouse_mcp": "unreachable",
                 "state": "degraded",
             },
+            "clickhouse_store": "unreachable",
+            "mcp_status": get_mcp_status(),
             "telemetry": {
                 "uptime_seconds": uptime_seconds,
             },

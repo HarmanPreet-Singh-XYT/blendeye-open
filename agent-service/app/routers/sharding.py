@@ -2,6 +2,7 @@ import re
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from app.agents.perspective_sharder import (
     CharacterProfile,
@@ -55,8 +56,10 @@ async def shard_script(body: ShardScriptRequest) -> ShardScriptResponse:
     ]
 
     store = get_clickhouse_store()
-    store.clear_project_events(body.project_id)
-    store.insert_events(events)
+    # Both store calls are synchronous clickhouse-connect round-trips; run the
+    # clear+insert pair in one threadpool hop so a re-shard can't block the
+    # event loop for the duration of a ClickHouse mutation.
+    await run_in_threadpool(_replace_project_events, store, body.project_id, events)
 
     return ShardScriptResponse(
         scene_title=parsed.scene_title,
@@ -67,7 +70,16 @@ async def shard_script(body: ShardScriptRequest) -> ShardScriptResponse:
     )
 
 
+def _replace_project_events(store, project_id: str, events: list[StoryEvent]) -> None:
+    store.clear_project_events(project_id)
+    store.insert_events(events)
+
+
 @router.get("/events/{project_id}", response_model=list[StoryEvent])
-async def get_project_events(project_id: str) -> list[StoryEvent]:
+def get_project_events(project_id: str) -> list[StoryEvent]:
+    """Declared `def` (not `async def`) because clickhouse-connect is a
+    synchronous driver — FastAPI runs sync handlers in its threadpool, which
+    keeps the ClickHouse round-trip off the event loop.
+    """
     store = get_clickhouse_store()
     return store.events_for_project(project_id)

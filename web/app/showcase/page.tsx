@@ -19,14 +19,44 @@ import {
 } from "@/components/cinema/new-project-dialog";
 import { FilmFusionDialog } from "@/components/cinema/film-fusion-dialog";
 import { createNewProjectEntry, saveProject } from "@/lib/project-store";
+import { VAULT_PROTOCOL_PRESET } from "@/lib/demo-preset";
+import { useAuth } from "@/lib/auth-context";
 
 export default function ShowcasePage() {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
   const [isGeneratingProject, setIsGeneratingProject] = React.useState(false);
   const [fusionOpen, setFusionOpen] = React.useState(false);
 
+  // Showcase is public, but productions are account-scoped (cloud-only,
+  // login-gated). Visitors are routed to sign-up instead of into a wizard
+  // whose result could not be saved.
+  const goToSignUp = React.useCallback(() => {
+    router.push("/auth?mode=signup&redirect=%2Fdashboard");
+  }, [router]);
+
+  const handleOpenNewProject = React.useCallback(() => {
+    if (!isAuthenticated) {
+      goToSignUp();
+      return;
+    }
+    setNewProjectOpen(true);
+  }, [isAuthenticated, goToSignUp]);
+
+  const handleOpenFusion = React.useCallback(() => {
+    if (!isAuthenticated) {
+      goToSignUp();
+      return;
+    }
+    setFusionOpen(true);
+  }, [isAuthenticated, goToSignUp]);
+
   const handleCreateProject = async (data: NewProjectFormData) => {
+    if (!isAuthenticated) {
+      goToSignUp();
+      return;
+    }
     setIsGeneratingProject(true);
     try {
       let genData: any = null;
@@ -96,6 +126,18 @@ export default function ShowcasePage() {
     }
   };
 
+  // Pre-fills the New Production wizard with the guided demo preset and runs
+  // the ordinary generation pipeline, so the demo takes exactly the same code
+  // path as a hand-authored slate.
+  const handleLoadDemoProject = () => {
+    if (!isAuthenticated) {
+      goToSignUp();
+      return;
+    }
+    setNewProjectOpen(true);
+    void handleCreateProject(VAULT_PROTOCOL_PRESET);
+  };
+
   return (
     <div className="relative min-h-screen bg-background text-foreground flex flex-col selection:bg-accent/30 selection:text-accent-foreground overflow-x-hidden">
       {/* Ambient Visual Background Effects */}
@@ -103,16 +145,17 @@ export default function ShowcasePage() {
 
       {/* Top Studio Nav */}
       <LandingNavbar
-        onOpenNewProject={() => setNewProjectOpen(true)}
-        onOpenFusion={() => setFusionOpen(true)}
+        onOpenNewProject={handleOpenNewProject}
+        onOpenFusion={handleOpenFusion}
       />
 
       {/* Main Landing Page Content Container */}
       <main className="relative z-10 flex-1 flex flex-col items-center px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full space-y-20">
         {/* 1. High-Impact Cinematic Hero */}
         <LandingHero
-          onOpenNewProject={() => setNewProjectOpen(true)}
-          onOpenFusion={() => setFusionOpen(true)}
+          onOpenNewProject={handleOpenNewProject}
+          onOpenFusion={handleOpenFusion}
+          onLoadDemoProject={handleLoadDemoProject}
         />
 
         {/* 2. Centerpiece: Interactive Time-Gate Engine & Interrogation Simulator */}
@@ -128,12 +171,15 @@ export default function ShowcasePage() {
         <MultiverseTakesSwitcher />
 
         {/* 6. Film Fusion Screenplay Crossover Engine */}
-        <FilmFusionCrossover onOpenFusionDialog={() => setFusionOpen(true)} />
+        <FilmFusionCrossover onOpenFusionDialog={handleOpenFusion} />
 
         {/* 7. Featured Production Slates (With 2.39:1 Letterbox Frames) */}
-        <FeaturedSlatesShowcase onOpenNewProject={() => setNewProjectOpen(true)} />
+        <FeaturedSlatesShowcase
+          onOpenNewProject={handleOpenNewProject}
+          onLoadDemoProject={handleLoadDemoProject}
+        />
 
-        {/* 8. ClickHouse Deep Dive: Architecture & Partner Track Benchmarks */}
+        {/* 8. ClickHouse Deep Dive: Architecture & Performance Benchmarks */}
         <ClickHouseDeepDive />
       </main>
 

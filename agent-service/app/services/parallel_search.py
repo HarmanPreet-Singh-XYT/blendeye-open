@@ -1,7 +1,7 @@
 """Parallel Web Systems Service — High-performance web intelligence and search grounding.
 Powers real-time location scouting, municipal permit lookups, soundstage specs,
 and cinematic box office precedent research via the official `parallel-web` SDK.
-Satisfies the Parallel Partner Track requirement for runtime Search API execution.
+Provides runtime Search API execution for the location-scouting agents.
 """
 
 from __future__ import annotations
@@ -15,7 +15,10 @@ from typing import Any
 from parallel import Parallel
 
 from app.config import get_settings
-from app.services.observability import PARALLEL_SEARCH_LATENCY_SECONDS, PARALLEL_SEARCH_QUERIES_TOTAL
+from app.services.observability import (
+    PARALLEL_SEARCH_LATENCY_SECONDS,
+    PARALLEL_SEARCH_QUERIES_TOTAL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +32,7 @@ _parallel_client: Parallel | None = None
 
 def get_parallel_client() -> Parallel | None:
     """Returns a singleton instance of the Parallel client if an API key is configured."""
-    global _parallel_client  # noqa: PLW0603
+    global _parallel_client
     if _parallel_client is not None:
         return _parallel_client
 

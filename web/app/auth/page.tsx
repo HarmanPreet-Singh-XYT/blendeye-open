@@ -294,7 +294,7 @@ function AuthPageContent() {
             <div className="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-xs text-amber-300">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span className="leading-snug">
-                Supabase credentials not detected. You can explore as a guest or configure <code className="bg-background/40 px-1 py-0.5 rounded text-[10px]">NEXT_PUBLIC_SUPABASE_URL</code> in your environment.
+                Supabase credentials not detected. BlendEye is cloud-only, so sign-in is unavailable until you configure <code className="bg-background/40 px-1 py-0.5 rounded text-[10px]">NEXT_PUBLIC_SUPABASE_URL</code> and <code className="bg-background/40 px-1 py-0.5 rounded text-[10px]">NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>.
               </span>
             </div>
           )}
@@ -311,19 +311,6 @@ function AuthPageContent() {
                 Create Account
               </TabsTrigger>
             </TabsList>
-
-            {/* Direct Guest Access Banner */}
-            <div className="mb-4 p-2.5 rounded-lg border border-accent/30 bg-accent/10 flex items-center justify-between gap-2 text-xs">
-              <span className="text-muted-foreground text-[11px]">
-                Want to start immediately without email?
-              </span>
-              <Link
-                href={redirectParam}
-                className="font-semibold text-accent hover:underline flex items-center gap-1 shrink-0 text-xs"
-              >
-                <span>Continue as Guest →</span>
-              </Link>
-            </div>
 
             {errorMsg && (
               <div className="mb-4 p-3 rounded-lg bg-destructive/15 border border-destructive/30 flex flex-col gap-2 text-xs text-destructive">
@@ -586,18 +573,13 @@ function AuthPageContent() {
             </TabsContent>
           </Tabs>
 
-          {/* Footer Ribbon with Guest Mode option */}
+          {/* Footer Ribbon */}
           <div className="mt-6 pt-4 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground font-mono">
             <span className="flex items-center gap-1.5">
               <Key className="h-3 w-3 text-accent" />
               Supabase Auth Engine
             </span>
-            <Link
-              href={redirectParam}
-              className="text-muted-foreground hover:text-foreground underline cursor-pointer"
-            >
-              Continue as Guest
-            </Link>
+            <span className="text-muted-foreground">Account required</span>
           </div>
         </div>
       </div>

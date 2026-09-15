@@ -1235,8 +1235,7 @@
     "clickhouse",
     "grafana",
     "veo",
-    "gemini",
-    "hackathon"
+    "gemini"
   ],
   "templating": {
     "list": [

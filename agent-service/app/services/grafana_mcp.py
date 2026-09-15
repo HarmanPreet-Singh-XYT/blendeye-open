@@ -1,7 +1,6 @@
 """Grafana MCP Toolset — Provides Google ADK agents runtime access to Grafana's 60+ tools.
 Allows autonomous studio agents to query metrics (query_prometheus), inspect logs (query_loki_logs),
 search dashboards, and verify pipeline incident status via the official `mcp-grafana` server.
-Satisfies the Grafana Labs Partner Track requirement.
 """
 
 from __future__ import annotations

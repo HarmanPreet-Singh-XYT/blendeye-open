@@ -1,8 +1,8 @@
 # Agentic Cinema: Complete Architecture & System Specification
 
-> Original full-vision spec, pre-hackathon-scoping. The actively-built subset is in `idea.md`;
-> this document is kept for reference on features that didn't make the 6-day cut and could be
-> picked back up post-hackathon.
+> Original full-vision spec, written before the build was scoped down. The actively-built
+> subset is in `idea.md`; this document is kept for reference on features that didn't make the
+> initial cut and could be picked back up later.
 
 ---
 
@@ -109,16 +109,11 @@ The visual canvas models creative production as an Unreal Engine / Niagara-style
 
 ---
 
-### 6. Mandatory Hackathon Compliance (superseded — see idea.md Section 2)
+### 6. Runtime Platform Constraints (superseded — see idea.md Section 2)
 
-* **Core Models & Logic:** Multi-agent workflows orchestrated using Gemini 2.5 Flash and Google Cloud ADK.
-* **Partner Integrations (Select One):**
-* **ClickHouse (Recommended for Market Viability):** Connect the official `mcp-clickhouse` server at runtime to run fast analytical SQL queries over historical box office, streaming retention, and regional census data.
-* **Parallel:** Call the Parallel Search API / MCP tool at runtime to ground agent decisions with live web data covering screenplay scripts, equipment rental prices, and film trivia.
-* **Replit:** Build, host, and deploy the entire multi-agent web dashboard within Replit.
-
-
-* **Required Deliverables:** Public open-source code repository with partner imports, a hosted live application URL, and a 3-minute video walkthrough.
+* **Core Models & Logic:** Multi-agent workflows orchestrated using Gemini and Google Cloud ADK.
+* **Data Plane — ClickHouse:** Connect the official `mcp-clickhouse` server at runtime to run fast analytical SQL queries over historical box office, streaming retention, and regional census data.
+* **Web Grounding — Parallel:** Call the Parallel Search API / MCP tool at runtime to ground agent decisions with live web data covering screenplay scripts, equipment rental prices, and film trivia.
 
 ---
 

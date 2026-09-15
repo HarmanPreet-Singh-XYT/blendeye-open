@@ -27,29 +27,25 @@ import {
   FileText,
   LogOut,
   LogIn,
-  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   getAllProjects,
-  seedDemoProjects,
   syncProjectsWithSupabase,
   saveProject,
   toggleStarProject,
   deleteProject,
   createNewProjectEntry,
-  getOnboardingStorageKey,
   ensureProjectScenes,
-  getAuthHeaders,
-  getProjectsStorageKey,
   type ProjectData,
 } from "@/lib/project-store";
 import {
   NewProjectDialog,
   type NewProjectFormData,
 } from "@/components/cinema/new-project-dialog";
+import { VAULT_PROTOCOL_PRESET } from "@/lib/demo-preset";
 import { FilmFusionDialog } from "@/components/cinema/film-fusion-dialog";
 import { ClickHouseToolboxDialog } from "@/components/cinema/clickhouse-toolbox-dialog";
 import { CharacterLabDialog } from "@/components/cinema/character-lab-dialog";
@@ -159,37 +155,17 @@ export function StudioDashboard() {
     )[0];
   }, [projects]);
 
-  // Load projects: from Supabase Cloud if authenticated, or from local storage for guests
+  // Load projects for the signed-in account. The AuthGate above has already
+  // hydrated the store from Supabase, so the cache read is authoritative; the
+  // refetch is a cheap correctness backstop, not the primary source.
   const refreshProjects = React.useCallback(async () => {
-    // Show cached immediately so UI renders instantly with no blank delay
-    const cached = getAllProjects();
-    if (cached.length > 0) {
-      setProjects(cached);
-    }
-
-    if (user) {
-      try {
-        const res = await fetch("/api/projects", {
-          headers: getAuthHeaders(),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.projects)) {
-            const cloudProjects = data.projects.map(ensureProjectScenes);
-            setProjects(cloudProjects);
-            // Cache locally so instant render is available next time
-            const key = getProjectsStorageKey(user.id);
-            try {
-              localStorage.setItem(key, JSON.stringify(cloudProjects));
-            } catch {}
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn("[Dashboard] Cloud fetch error, keeping cached state:", err);
-      }
-    } else {
-      setProjects(getAllProjects());
+    setProjects(getAllProjects());
+    if (!user) return;
+    try {
+      const cloudProjects = await syncProjectsWithSupabase();
+      setProjects(cloudProjects.map(ensureProjectScenes));
+    } catch (err) {
+      console.warn("[Dashboard] Cloud refresh error, keeping cached state:", err);
     }
   }, [user]);
 
@@ -201,28 +177,23 @@ export function StudioDashboard() {
     const handleAuthChange = () => {
       refreshProjects();
     };
-    const handleQuotaWarning = (e: any) => {
-      alert(e?.detail?.message || "Storage quota exceeded. Please sign in to sync with cloud storage.");
-    };
 
     window.addEventListener("agentic_cinema_auth_changed", handleAuthChange);
-    window.addEventListener("agentic_cinema_quota_exceeded", handleQuotaWarning);
     return () => {
       window.removeEventListener("agentic_cinema_auth_changed", handleAuthChange);
-      window.removeEventListener("agentic_cinema_quota_exceeded", handleQuotaWarning);
     };
   }, [refreshProjects, user, authLoading]);
 
-  // First-visit onboarding — shown once per user (or once per guest browser)
+  // First-visit onboarding — shown once per session for accounts with no work
+  // yet. This is intentionally session-scoped rather than persisted.
+  const onboardingShownRef = React.useRef(false);
   React.useEffect(() => {
-    if (authLoading) return;
-    try {
-      const key = getOnboardingStorageKey();
-      if (!localStorage.getItem(key)) {
-        setOnboardingOpen(true);
-      }
-    } catch {}
-  }, [authLoading, user]);
+    if (authLoading || !user) return;
+    if (!onboardingShownRef.current && projects.length === 0) {
+      onboardingShownRef.current = true;
+      setOnboardingOpen(true);
+    }
+  }, [authLoading, user, projects.length]);
 
   // Pre-warm agent-service sidecar on dashboard load to mitigate cold starts
   React.useEffect(() => {
@@ -231,62 +202,19 @@ export function StudioDashboard() {
 
   const handleOnboardingOpenChange = (nextOpen: boolean) => {
     setOnboardingOpen(nextOpen);
-    if (!nextOpen) {
-      try {
-        localStorage.setItem(getOnboardingStorageKey(), "true");
-      } catch {}
-    }
   };
 
-  // One-click judge/demo preset — "The Vault Protocol" heist thriller.
+  // One-click demo preset — "The Vault Protocol" heist thriller.
   // Runs through the exact same generation + sharding pipeline as the
-  // wizard (see JUDGE_TESTING.md / project_create.md), just pre-filled so
-  // nobody has to type the fields in by hand.
+  // wizard (see project_create.md), just pre-filled so nobody has to type the
+  // fields in by hand. The preset itself is shared with the public landing
+  // page (see lib/demo-preset.ts) so the two cannot drift.
   const handleLoadDemoProject = () => {
     // Opens the same dialog so its full-screen "Architecting Production
     // Slate" loading overlay covers the (unused) form steps instead of the
     // button just looking frozen while Gemini generates + ClickHouse shards.
     setNewProjectOpen(true);
-    handleCreateNewProject({
-      title: "The Vault Protocol",
-      logline:
-        "A three-person heist crew breaches a private bank's sub-basement vault. The demolitions expert believes their exit route is secure — she doesn't know the getaway driver has already been paid off to seal it.",
-      genre: "Heist Thriller",
-      directorStyle: "Michael Mann",
-      coreSecret:
-        "Kessler has been paid by a rival crew to seal the vault's exit corridor once Rae and Priya are inside, trapping them so the rival crew can claim the score. Rae does not know Kessler has betrayed them until the exit corridor is sealed.",
-      primaryLocation: "Sub-basement vault, First Continental Bank",
-      targetTerritories: ["US", "UK"],
-      narrativeFormat: "short",
-      targetRuntimeMinutes: 18,
-      customCharacters: [
-        {
-          name: "Rae",
-          archetype: "Veteran demolitions expert, meticulous, trusts her crew completely",
-          role: "Lead Protagonist",
-          speechStyle: "terse, technical, controlled",
-          subtextRatio: "moderate",
-          objective: "Breach the vault and get the crew out clean",
-        },
-        {
-          name: "Kessler",
-          archetype:
-            "Getaway driver secretly bought out by a rival crew; needs the job to fail without anyone tracing it to him",
-          role: "Strategic Foil-Antagonist",
-          speechStyle: "calm, reassuring, overly agreeable",
-          subtextRatio: "high",
-          objective: "Seal the exit corridor without being detected",
-        },
-        {
-          name: "Priya",
-          archetype: "Bank security consultant feeding the crew real-time floor intel",
-          role: "Inside Informant",
-          speechStyle: "clipped, professional",
-          subtextRatio: "moderate",
-          objective: "Keep the crew ahead of security response",
-        },
-      ],
-    });
+    handleCreateNewProject(VAULT_PROTOCOL_PRESET);
   };
 
   // Handle New Project from dialog with Autonomous AI Showrunner Sequence Architect
@@ -574,8 +502,8 @@ export function StudioDashboard() {
           ) : (
             <div className="flex items-center justify-between rounded-lg border border-border/40 bg-secondary/15 p-2 gap-2">
               <div className="flex flex-col min-w-0">
-                <span className="text-xs font-medium text-foreground">Guest Sandbox</span>
-                <span className="text-[10px] font-mono text-muted-foreground">Unsynced session</span>
+                <span className="text-xs font-medium text-foreground">Not signed in</span>
+                <span className="text-[10px] font-mono text-muted-foreground">Sign in to load your studio</span>
               </div>
               <Button
                 variant="outline"
@@ -752,7 +680,7 @@ export function StudioDashboard() {
               size="sm"
               onClick={handleLoadDemoProject}
               disabled={isGeneratingProject}
-              title="Instantly generate a ready-to-test heist thriller with a built-in character secret — for judges and quick demos"
+              title="Instantly generate a ready-to-test heist thriller with a built-in character secret — for quick demos"
               className="w-full justify-center gap-1.5 font-medium text-xs cursor-pointer"
             >
               <Zap className="h-3.5 w-3.5" />
@@ -1025,14 +953,12 @@ export function StudioDashboard() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      seedDemoProjects();
-                      refreshProjects();
-                    }}
+                    onClick={handleLoadDemoProject}
+                    disabled={isGeneratingProject}
                     className="gap-2 border-border text-foreground hover:bg-secondary w-full sm:w-auto"
                   >
                     <Sparkles className="h-4 w-4 text-accent" />
-                    Explore Demo Productions
+                    Load Demo: The Vault Protocol
                   </Button>
                 </div>
               </div>
@@ -1216,10 +1142,11 @@ export function StudioDashboard() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => router.push("/studio/vault-heist-demo")}
+                    onClick={handleLoadDemoProject}
+                    disabled={isGeneratingProject}
                     className="text-xs border-border"
                   >
-                    Explore Vault Heist First
+                    Load Guided Demo First
                   </Button>
                 </div>
               </div>

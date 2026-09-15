@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
+
 from fastapi import APIRouter
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.runner import run_agent_once
 from app.agents.showrunner import build_showrunner_agent
 from app.services.clickhouse_store import get_clickhouse_store
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/showrunner", tags=["showrunner"])
 
@@ -54,8 +58,8 @@ async def get_precedents(genre: str = "") -> list[PrecedentItem]:
     for item in raw:
         try:
             precedents.append(PrecedentItem(**item))
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Skipping malformed precedent row: %s", e)
     return precedents
 
 
@@ -71,8 +75,8 @@ async def chat_with_showrunner(body: ShowrunnerChatRequest) -> ShowrunnerChatRes
     for p in raw_precedents:
         try:
             precedents.append(PrecedentItem(**p))
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Skipping malformed precedent row: %s", e)
 
     precedent_context = "\n".join(
         f"- Reference: {p.historical_reference} | Trope: {p.trope} | Tension: {p.tension_level}/10 | Retention: {p.audience_retention_pct}% ({p.commercial_territory})\n  Notes: {p.precedent_example}"
@@ -177,11 +181,22 @@ class ExecuteDirectiveRequest(BaseModel):
 
 
 class ExecuteDirectiveResponse(BaseModel):
+    # `_fallback` must be declared with an alias, not as a leading-underscore
+    # field: Pydantic v2 turns those into private attributes, so the flag was
+    # silently absent from the JSON and the Next.js route could never tell a
+    # canned acknowledgement from real model output.
+    model_config = ConfigDict(populate_by_name=True)
+
     thought_process: str
     assistant_message: str
     actions: list[dict] = Field(default_factory=list)
     precedents_cited: list[PrecedentItem] = Field(default_factory=list)
     clickhouse_query_sql: str = ""
+    # True when the structured-output parse failed and this is the canned
+    # acknowledgement rather than real model output. The Next.js route uses
+    # this to fall through to its deterministic local engine instead of
+    # showing the Director a fake "I have updated the slate" reply.
+    fallback: bool = Field(default=False, alias="_fallback")
 
 
 @router.post("/execute", response_model=ExecuteDirectiveResponse)
@@ -292,6 +307,10 @@ AVAILABLE ACTIONS YOU CAN EMIT IN "actions" (ONLY WHEN THE DIRECTOR REQUESTS OR 
 30. {{"type": "create_score_take", "sceneIdentifier": 2, "title": "Score Cue", "prompt": "Tense cinematic strings", "durationSec": 30, "scoreType": "score"|"source"|"vocal", "audioUrl": "/audio/demo-score.wav"}}
 31. {{"type": "set_master_score", "sceneIdentifier": 2, "takeNumber": 1}}
 32. {{"type": "delete_score_take", "sceneIdentifier": 2, "takeNumber": 1}}
+33. {{"type": "attach_asset", "assetName": "Sub-Level Concrete Vault", "targetType": "scene"|"character"|"score_moodboard", "targetIdentifier": 2|"Marcus", "role": "plate"|"face"|"body"|"moodboard"}}
+34. {{"type": "create_asset_record", "name": "Asset Name", "category": "location"|"character_face"|"character_body"|"style"|"video"|"audio"|"map", "url": "/assets/...", "tags": ["tag1", "tag2"]}}
+35. {{"type": "generate_timeline_moment", "sceneIdentifier": 2, "timestampSec": 45, "prompt": "Marcus confronting Elena under harsh neon rim lighting", "stylePreset": "anamorphic_35mm", "cameraFraming": "wide_master"}}
+36. {{"type": "switch_view", "tab": "planning"|"simulation"|"generation"|"showrunner", "subview": "canvas"|"timeline"|"score"|"video"|"location"|"floorplan"|"assets"}}
 
 PROJECT CONTEXT:
 Title: {body.project_title or "Untitled"}
@@ -332,9 +351,13 @@ Respond ONLY with a single, valid, raw JSON object matching:
                 actions=parsed.get("actions", []),
                 precedents_cited=precedents,
                 clickhouse_query_sql=sql_executed if precedents else "",
+                fallback=False,
             )
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except Exception as e:  # noqa: BLE001
+        # Not swallowed silently any more: a parse failure here means the
+        # Director gets the canned acknowledgement below instead of a real
+        # answer, which is worth seeing in the logs.
+        logger.warning("Showrunner directive JSON parse failed, serving canned fallback: %s", e)
 
     return ExecuteDirectiveResponse(
         thought_process=f"Processed directive: {body.user_prompt}",
@@ -342,6 +365,7 @@ Respond ONLY with a single, valid, raw JSON object matching:
         actions=[],
         precedents_cited=precedents,
         clickhouse_query_sql=sql_executed if precedents else "",
+        fallback=True,
     )
 
 

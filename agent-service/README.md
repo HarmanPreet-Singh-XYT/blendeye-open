@@ -60,9 +60,9 @@ Two separate paths, intentionally:
   Story Event Engine backing the timeline scrubber's time-gate mechanic).
 - `app/services/clickhouse_mcp.py` — launches the official `mcp-clickhouse`
   server as a subprocess and wires it into ADK as a tool an agent can call
-  itself. This is what satisfies the hackathon's ClickHouse track
-  requirement literally (runtime use of the `mcp-clickhouse` MCP server,
-  not just a SQL driver) — reserved for agent-initiated grounding queries
+  itself. This is what provides genuine agent-driven ClickHouse access
+  (runtime use of the `mcp-clickhouse` MCP server, not just a SQL driver)
+  — reserved for agent-initiated grounding queries
   (plan.md Layer 4), not our own internal reads/writes.
 
 ## Dependency note

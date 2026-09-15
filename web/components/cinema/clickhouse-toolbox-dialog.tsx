@@ -68,7 +68,7 @@ export function ClickHouseToolboxDialog({
                   </DialogTitle>
                   <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono">
                     <CheckCircle2 className="h-2.5 w-2.5 mr-1" />
-                    Official Partner Verified
+                    Official MCP Server
                   </Badge>
                 </div>
                 <DialogDescription className="text-xs text-muted-foreground">

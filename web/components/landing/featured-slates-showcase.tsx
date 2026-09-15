@@ -1,14 +1,12 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { SlateLabel } from "@/components/cinema/slate-label";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Play, Plus, Clock, Users, ArrowRight, Film, ShieldCheck } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Play, Plus, Clock, ArrowRight } from "lucide-react";
+import { VAULT_PROTOCOL_SUMMARY } from "@/lib/demo-preset";
 
 interface ProductionSlate {
   id: string;
@@ -22,38 +20,41 @@ interface ProductionSlate {
   badge: string;
   badgeVariant: string;
   isCustom?: boolean;
+  isDemo?: boolean;
 }
+
+const CUSTOM_SLATE: ProductionSlate = {
+  id: "custom-slate",
+  title: "Director's Custom Studio",
+  genre: "Any Genre / Custom Premise",
+  runtime: "Configurable Runtime",
+  imageSrc: "/cinema/directors_suite.jpg",
+  characters: ["Your Characters"],
+  logline:
+    "Create your own production slate from a prompt or logline. Gemini 3.7 Flash shards your script into timestamped ClickHouse story events.",
+  hook:
+    "Full control over character psychological DNA, camera lens packages, stage blocking, and custom time-gated knowledge firewalls.",
+  badge: "Writers' Room",
+  badgeVariant: "border-cyan-500/40 bg-cyan-500/15 text-cyan-300",
+  isCustom: true,
+};
 
 const FEATURED_SLATES: ProductionSlate[] = [
   {
-    id: "aethelgard-chronos-shift",
-    title: "Aethelgard: The Chronos Shift",
-    genre: "Cosmic Sci-Fi / Space Opera",
-    runtime: "140 Min Feature",
-    imageSrc: "/cinema/scenes/scene_1_storyboard_accretion.jpg",
-    characters: ["Julian Ross", "Dr. Maya Lin", "AURA-9"],
-    logline: "An aging telemetry pilot and an astrophysicist enter the event horizon of a micro-singularity, where every 10 minutes costs 3 Earth years, only to receive a distress signal from their own future ship.",
-    hook: "Scrub to 00:40:00 to hear Julian discover his own voice on the future black-box transmission. Interrogate Maya in the Hot Seat about why she concealed the temporal frame-dragging.",
-    badge: "Benchmark Demo",
-    badgeVariant: "border-accent/40 bg-accent/15 text-accent",
+    id: "vault-protocol-demo",
+    ...VAULT_PROTOCOL_SUMMARY,
+    isDemo: true,
   },
-  {
-    id: "custom-slate",
-    title: "Director's Custom Studio",
-    genre: "Any Genre / Custom Premise",
-    runtime: "Configurable Runtime",
-    imageSrc: "/cinema/directors_suite.jpg",
-    characters: ["Your Characters"],
-    logline: "Create your own production slate from a prompt or logline. Gemini 3.7 Flash shards your script into timestamped ClickHouse story events.",
-    hook: "Full control over character psychological DNA, camera lens packages, stage blocking, and custom time-gated knowledge firewalls.",
-    badge: "Writers' Room",
-    badgeVariant: "border-cyan-500/40 bg-cyan-500/15 text-cyan-300",
-    isCustom: true,
-  },
+  CUSTOM_SLATE,
 ];
 
-export function FeaturedSlatesShowcase({ onOpenNewProject }: { onOpenNewProject: () => void }) {
-  const router = useRouter();
+export function FeaturedSlatesShowcase({
+  onOpenNewProject,
+  onLoadDemoProject,
+}: {
+  onOpenNewProject: () => void;
+  onLoadDemoProject: () => void;
+}) {
 
   return (
     <div id="slates" className="w-full space-y-6 pt-12">
@@ -62,10 +63,11 @@ export function FeaturedSlatesShowcase({ onOpenNewProject }: { onOpenNewProject:
         <div className="space-y-1">
           <SlateLabel>Production Slates</SlateLabel>
           <h2 className="text-2xl md:text-3xl font-heading font-bold tracking-tight text-foreground">
-            Featured Benchmark Production Slates
+            Start a Production Slate
           </h2>
           <p className="text-xs md:text-sm text-muted-foreground max-w-2xl">
-            Select a verified production slate to enter the writers&apos; room or start your own custom film from scratch.
+            Load the guided demo production into your own studio, or start a custom film from scratch. Every slate is
+            generated and sharded into your account.
           </p>
         </div>
 
@@ -88,7 +90,7 @@ export function FeaturedSlatesShowcase({ onOpenNewProject }: { onOpenNewProject:
               if (slate.isCustom) {
                 onOpenNewProject();
               } else {
-                router.push(`/studio/${slate.id}`);
+                onLoadDemoProject();
               }
             }}
             className="group relative rounded-2xl border border-border bg-card hover:border-accent/60 transition-all duration-300 overflow-hidden flex flex-col justify-between shadow-lg hover:shadow-2xl cursor-pointer"
@@ -157,32 +159,30 @@ export function FeaturedSlatesShowcase({ onOpenNewProject }: { onOpenNewProject:
               </div>
 
               {/* Action Button */}
-              {slate.isCustom ? (
-                <Button
-                  size="sm"
-                  className="w-full text-xs gap-2 bg-secondary text-foreground hover:bg-accent hover:text-accent-foreground transition-colors font-medium h-9 cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
+              <Button
+                size="sm"
+                className="w-full text-xs gap-2 bg-secondary text-foreground hover:bg-accent hover:text-accent-foreground transition-colors font-medium h-9 cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (slate.isCustom) {
                     onOpenNewProject();
-                  }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Create Custom Slate</span>
-                </Button>
-              ) : (
-                <Link
-                  href={`/studio/${slate.id}`}
-                  prefetch={true}
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn(
-                    buttonVariants({ size: "sm" }),
-                    "w-full text-xs gap-2 bg-secondary text-foreground hover:bg-accent hover:text-accent-foreground transition-colors font-medium h-9 inline-flex items-center justify-center cursor-pointer"
-                  )}
-                >
-                  <Play className="h-3.5 w-3.5 fill-current" />
-                  <span>Enter Writers&apos; Room</span>
-                </Link>
-              )}
+                  } else {
+                    onLoadDemoProject();
+                  }
+                }}
+              >
+                {slate.isCustom ? (
+                  <>
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Create Custom Slate</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                    <span>Load Guided Demo</span>
+                  </>
+                )}
+              </Button>
             </div>
           </div>
         ))}

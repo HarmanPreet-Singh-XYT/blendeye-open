@@ -584,7 +584,7 @@ export function TimeGateSimulator() {
               </div>
             </div>
 
-            {/* Partner Track Takeaway Note */}
+            {/* Takeaway Note */}
             <div className="p-3 rounded-lg border border-accent/30 bg-accent/5 space-y-1 text-[11px]">
               <span className="font-heading font-bold text-accent flex items-center gap-1">
                 <Zap className="h-3 w-3" />

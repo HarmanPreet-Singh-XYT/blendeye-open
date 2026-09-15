@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Film, Plus, Database, Layers } from "lucide-react";
+import { Film, Plus, Database, Layers, LogIn } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { AuthUserButton } from "@/components/cinema/auth-user-button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 
 interface LandingNavbarProps {
   onOpenNewProject: () => void;
@@ -14,7 +14,7 @@ interface LandingNavbarProps {
 }
 
 export function LandingNavbar({ onOpenNewProject }: LandingNavbarProps) {
-  const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const [scrolled, setScrolled] = React.useState(false);
   const [clickhouseLatency, setClickhouseLatency] = React.useState<string | null>(null);
 
@@ -139,17 +139,31 @@ export function LandingNavbar({ onOpenNewProject }: LandingNavbarProps) {
             <span className="sm:hidden">New</span>
           </Button>
 
-          <Link
-            href="/dashboard"
-            prefetch={true}
-            className={cn(
-              buttonVariants({ size: "sm" }),
-              "h-8 px-3 text-xs gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-sm font-semibold whitespace-nowrap cursor-pointer inline-flex items-center"
-            )}
-          >
-            <Film className="h-3.5 w-3.5" />
-            <span>Studio Dashboard</span>
-          </Link>
+          {isAuthenticated ? (
+            <Link
+              href="/dashboard"
+              prefetch={true}
+              className={cn(
+                buttonVariants({ size: "sm" }),
+                "h-8 px-3 text-xs gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-sm font-semibold whitespace-nowrap cursor-pointer inline-flex items-center"
+              )}
+            >
+              <Film className="h-3.5 w-3.5" />
+              <span>Studio Dashboard</span>
+            </Link>
+          ) : (
+            <Link
+              href="/auth?mode=signin&redirect=%2Fdashboard"
+              prefetch={true}
+              className={cn(
+                buttonVariants({ size: "sm" }),
+                "h-8 px-3 text-xs gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-sm font-semibold whitespace-nowrap cursor-pointer inline-flex items-center"
+              )}
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              <span>Sign In</span>
+            </Link>
+          )}
 
           <AuthUserButton />
         </div>

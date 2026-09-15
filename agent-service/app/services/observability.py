@@ -4,7 +4,10 @@ Exposes real-time pipeline performance counters, latency histograms, and alert d
 
 from __future__ import annotations
 
+import logging
+import threading
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 from prometheus_client import (
@@ -14,6 +17,8 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
+
+logger = logging.getLogger(__name__)
 
 # Prometheus Metrics Definitions
 
@@ -306,12 +311,58 @@ def get_studio_health_status() -> dict[str, Any]:
     }
 
 
+def get_mcp_status() -> dict[str, Any]:
+    """Reports whether the MCP servers this service actually shells out to are
+    present and configured, derived from real checks rather than asserted
+    strings.
+
+    Each entry carries a `verified` flag so callers can tell a real capability
+    probe from a config check. `mcp-clickhouse` and `mcp-grafana` are stdio
+    subprocesses launched on demand (see clickhouse_mcp.py / grafana_mcp.py),
+    so "available" means the console script resolves on PATH — not that a
+    session has been established.
+    """
+    import shutil
+
+    from app.config import get_settings
+
+    settings = get_settings()
+
+    clickhouse_bin = shutil.which("mcp-clickhouse")
+    grafana_bin = shutil.which("mcp-grafana")
+
+    if not clickhouse_bin:
+        clickhouse_state = "unavailable (mcp-clickhouse not on PATH)"
+    elif not settings.clickhouse_host:
+        clickhouse_state = "installed, no ClickHouse host configured"
+    else:
+        clickhouse_state = f"available (read-only, target {settings.clickhouse_host})"
+
+    if not grafana_bin:
+        grafana_state = "unavailable (mcp-grafana not on PATH)"
+    elif not settings.grafana_service_account_token:
+        grafana_state = "installed, no GRAFANA_SERVICE_ACCOUNT_TOKEN configured"
+    else:
+        grafana_state = "available (service account token configured)"
+
+    return {
+        "mcp_clickhouse": {
+            "state": clickhouse_state,
+            "on_path": bool(clickhouse_bin),
+            "allow_write": False,
+            "verified": bool(clickhouse_bin and settings.clickhouse_host),
+        },
+        "mcp_grafana": {
+            "state": grafana_state,
+            "on_path": bool(grafana_bin),
+            "verified": bool(grafana_bin and settings.grafana_service_account_token),
+        },
+    }
+
+
 # ============================================================================
 # Agentic Request Observability & Classification Engine
 # ============================================================================
-
-import threading
-from datetime import datetime, timezone
 
 _AGENTIC_STATS_LOCK = threading.Lock()
 
@@ -325,7 +376,7 @@ def map_endpoint_to_agentic(path: str) -> dict[str, str]:
             "label": "Writers' Room Showrunner",
             "category": "Creative Development",
         }
-    if clean_path.startswith("/location") or clean_path.startswith("/location-scout"):
+    if clean_path.startswith(("/location", "/location-scout")):
         return {
             "agentic_use": "location_scouting",
             "label": "Location Scout & Precedent Researcher",
@@ -337,7 +388,7 @@ def map_endpoint_to_agentic(path: str) -> dict[str, str]:
             "label": "Script Continuity Supervisor",
             "category": "Quality & Continuity",
         }
-    if clean_path.startswith("/video-sequence") or clean_path.startswith("/media/video"):
+    if clean_path.startswith(("/video-sequence", "/media/video")):
         return {
             "agentic_use": "video_sequencer_veo",
             "label": "Google Veo 3.1 Video Sequencer",
@@ -349,7 +400,7 @@ def map_endpoint_to_agentic(path: str) -> dict[str, str]:
             "label": "Gemini 3.1 Flash Multi-Speaker TTS",
             "category": "Generative Media",
         }
-    if clean_path.startswith("/media/image") or clean_path.startswith("/media/storyboard"):
+    if clean_path.startswith(("/media/image", "/media/storyboard")):
         return {
             "agentic_use": "storyboard_artist_imagen",
             "label": "Imagen 3 Storyboard Artist",
@@ -506,7 +557,7 @@ def record_agentic_request(endpoint: str, method: str, status_code: int, duratio
     code_str = str(status_code)
     status_class = f"{code_str[0]}xx" if len(code_str) >= 3 else "unknown"
     duration_ms = round(duration_sec * 1000, 2)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
 
     try:
         HTTP_AGENTIC_REQUESTS_TOTAL.labels(
@@ -519,8 +570,10 @@ def record_agentic_request(endpoint: str, method: str, status_code: int, duratio
             agentic_use=use,
             status_class=status_class,
         ).observe(duration_sec)
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        # Prometheus label registration is best-effort; a metrics failure must
+        # never break the request path it is instrumenting.
+        logger.debug("Failed to record Prometheus agentic counters: %s", e)
 
     with _AGENTIC_STATS_LOCK:
         if use not in _AGENTIC_STATS:

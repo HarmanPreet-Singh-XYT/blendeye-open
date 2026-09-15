@@ -1,5 +1,5 @@
 """Story Event Engine — ClickHouse-backed store for per-character timeline
-events. This is the required ClickHouse partner-track integration and the
+events. This is the primary ClickHouse integration and the
 actual data plane behind the timeline scrubber's time-gate mechanic (see
 idea.md Section 3, plan.md Layer 2).
 
@@ -19,13 +19,20 @@ Uses the official clickhouse-connect client directly for the read/write path
 used by every request, and separately exposes an MCP client entry point
 (see mcp_client.py) for the "grounding flourish" role (plan.md Layer 4) that
 needs to demonstrate actual mcp-clickhouse usage at runtime, not just a
-direct SQL driver — the hackathon's ClickHouse track requirement is scoped
+direct SQL driver — the requirement is scoped
 to real runtime use of the mcp-clickhouse server, so that path is kept
 separate and explicit rather than folded silently into this driver.
+
+Provenance note: `story_events` holds genuine model-derived output. The
+`cinematic_precedents` table is different — it is seeded from
+`_DEFAULT_PRECEDENTS` below, which is *hand-authored demo data* (see the
+comment on that constant). Treat it as illustrative, not as measured
+box-office history.
 """
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from typing import Literal
 
@@ -33,8 +40,6 @@ import clickhouse_connect
 from pydantic import BaseModel
 
 from app.config import get_settings
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +78,15 @@ _DEFAULT_PRECEDENTS = [
     ("Psychological Thriller", "Confined Pressure Cooker Interrogation", "The Silence of the Lambs (1991)", 0.93, "Global / UK & Europe", 91.5, "Extreme close-up eye contact and psychological boundary manipulation."),
     ("Action Adventure", "High-Stakes Escalation & Extraction", "Mad Max: Fury Road (2015)", 0.95, "Global / Worldwide", 93.2, "Continuous in-camera kinetic momentum with minimal dialogue exposition."),
 ]
+
+# IMPORTANT — provenance of the rows above. These are hand-authored *demo
+# benchmark* rows: the film titles and craft notes are real, but
+# `tension_level` and `audience_retention_pct` are illustrative values chosen
+# by hand, NOT measured box-office or audience-retention data from any
+# dataset. They exist so the market/territory and showrunner views have
+# stable, non-hallucinated rows to render in a demo. Do not present them as
+# historical performance figures in UI copy or docs; see README's
+# "cinematic_precedents" note.
 
 
 class StoryEvent(BaseModel):
@@ -117,9 +131,9 @@ class ClickHouseStore:
                         ],
                     )
                     logger.info("Initialized and auto-seeded cinematic_precedents benchmark data.")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Could not auto-seed cinematic_precedents: %s", e)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("ClickHouse unavailable, activating memory fallback store: %s", e)
             self._client = None
 
@@ -155,7 +169,7 @@ class ClickHouseStore:
                     ],
                 )
                 return
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("ClickHouse insert failed, falling back to memory: %s", e)
         self._memory_events.extend(events)
 
@@ -191,7 +205,7 @@ class ClickHouseStore:
                     elif event_type == "unaware_of":
                         unaware_of.append(content)
                 return {"known_facts": known_facts, "unaware_of": unaware_of}
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("ClickHouse knowledge_state query failed: %s", e)
 
         # In-memory fallback
@@ -231,7 +245,7 @@ class ClickHouseStore:
                     )
                     for row in result.result_rows
                 ]
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("ClickHouse events_for_project query failed: %s", e)
 
         return [
@@ -240,19 +254,52 @@ class ClickHouseStore:
         ]
 
     def clear_project_events(self, project_id: str) -> None:
-        """Deletes prior events for a project to ensure idempotent re-sharding."""
+        """Deletes prior events for a project to ensure idempotent re-sharding.
+
+        `mutations_sync=1` makes ClickHouse wait for the mutation to actually
+        apply before returning. Without it the ALTER is queued and returns
+        immediately, so a caller that re-inserts (or a reader that queries)
+        right after can still observe the pre-delete rows.
+        """
         if self._client:
             try:
                 self._client.command(
                     "ALTER TABLE story_events DELETE WHERE project_id = {project_id:String}",
                     parameters={"project_id": project_id},
+                    settings={"mutations_sync": 1},
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("ClickHouse clear_project_events command failed: %s", e)
         self._memory_events = [e for e in self._memory_events if e.project_id != project_id]
 
+    @staticmethod
+    def _precedent_row(row: tuple) -> dict:
+        return {
+            "genre": row[0],
+            "trope": row[1],
+            "historical_reference": row[2],
+            "tension_level": row[3],
+            "commercial_territory": row[4],
+            "audience_retention_pct": float(row[5]),
+            "precedent_example": row[6],
+        }
+
+    @classmethod
+    def _default_precedents(cls) -> list[dict]:
+        return [cls._precedent_row(row) for row in _DEFAULT_PRECEDENTS]
+
     def get_cinematic_precedents(self, genre: str = "") -> list[dict]:
-        """Queries ClickHouse cinematic_precedents table for grounding flourish with hybrid genre fallback."""
+        """Queries ClickHouse cinematic_precedents table for grounding flourish with hybrid genre fallback.
+
+        Returns the hand-authored demo rows from `_DEFAULT_PRECEDENTS` when
+        ClickHouse isn't reachable or the query fails — the caller always gets
+        a usable list, but a disconnected store previously fell through to
+        `None.query(...)` and only worked because the resulting AttributeError
+        was swallowed. The guard below makes that path explicit.
+        """
+        if self._client is None:
+            return self._default_precedents()
+
         base_query = "SELECT genre, trope, historical_reference, tension_level, commercial_territory, audience_retention_pct, precedent_example FROM cinematic_precedents"
         if genre:
             try:
@@ -261,20 +308,9 @@ class ClickHouseStore:
                     parameters={"genre": f"%{genre}%"},
                 )
                 if result.result_rows:
-                    return [
-                        {
-                            "genre": row[0],
-                            "trope": row[1],
-                            "historical_reference": row[2],
-                            "tension_level": row[3],
-                            "commercial_territory": row[4],
-                            "audience_retention_pct": float(row[5]),
-                            "precedent_example": row[6],
-                        }
-                        for row in result.result_rows
-                    ]
-            except Exception:
-                pass
+                    return [self._precedent_row(row) for row in result.result_rows]
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Precedent genre lookup failed for %r: %s", genre, e)
 
             # Fallback to token matching for composite / hybrid genres
             tokens = [t.strip() for t in genre.replace("/", " ").replace("-", " ").split() if len(t.strip()) >= 4]
@@ -285,48 +321,16 @@ class ClickHouseStore:
                         parameters={"tok": f"%{tok}%"},
                     )
                     if result.result_rows:
-                        return [
-                            {
-                                "genre": row[0],
-                                "trope": row[1],
-                                "historical_reference": row[2],
-                                "tension_level": row[3],
-                                "commercial_territory": row[4],
-                                "audience_retention_pct": float(row[5]),
-                                "precedent_example": row[6],
-                            }
-                            for row in result.result_rows
-                        ]
-                except Exception:
-                    pass
+                        return [self._precedent_row(row) for row in result.result_rows]
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("Precedent token lookup failed for %r: %s", tok, e)
 
         try:
             result = self._client.query(f"{base_query} ORDER BY audience_retention_pct DESC")
-            return [
-                {
-                    "genre": row[0],
-                    "trope": row[1],
-                    "historical_reference": row[2],
-                    "tension_level": row[3],
-                    "commercial_territory": row[4],
-                    "audience_retention_pct": float(row[5]),
-                    "precedent_example": row[6],
-                }
-                for row in result.result_rows
-            ]
-        except Exception:
-            return [
-                {
-                    "genre": row[0],
-                    "trope": row[1],
-                    "historical_reference": row[2],
-                    "tension_level": row[3],
-                    "commercial_territory": row[4],
-                    "audience_retention_pct": float(row[5]),
-                    "precedent_example": row[6],
-                }
-                for row in _DEFAULT_PRECEDENTS
-            ]
+            return [self._precedent_row(row) for row in result.result_rows]
+        except Exception as e:  # noqa: BLE001
+            logger.warning("ClickHouse precedent query failed, serving demo benchmark rows: %s", e)
+            return self._default_precedents()
 
 
 

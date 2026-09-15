@@ -2,74 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import type { CitedPrecedent, CommanderExecutionResponse, StudioAction } from "@/lib/studio-actions";
 import { getPrecedents, executeShowrunnerDirective } from "@/lib/agent-service";
 
-const SYSTEM_PROMPT = `
-You are the Lead Showrunner & Omniscient Studio Co-Creator collaborating with a Director on a film production slate.
-You have FULL CREATIVE AND EXECUTIVE AUTHORITY over the entire film project.
-You speak like a thoughtful, sharp, perceptive Hollywood writers' room co-creator (like ChatGPT in creative partner mode).
+/**
+ * Studio Commander entry point.
+ *
+ * The Showrunner's system prompt and action catalog live in exactly one place:
+ * `agent-service/app/routers/showrunner.py`. This route used to carry a second,
+ * hand-maintained copy of that prompt plus a direct Gemini call, and the two
+ * drifted — the copy here had four actions the Python prompt never described,
+ * so the model could not emit them and their executor code was dead. Do not
+ * reintroduce a prompt copy here; the contract is enforced by
+ * `agent-service/tests/test_action_catalog_contract.py`.
+ *
+ * What remains here is the deterministic offline engine used when the sidecar
+ * is unreachable or reports a structured-output fallback. It does no language
+ * generation — it only pattern-matches explicit directives.
+ */
 
-CRITICAL INTERACTION RULES:
-1. Converse naturally and warmly like an experienced human collaborator.
-   - If the Director is greeting you, checking in, or asking general creative questions (e.g. "hi there", "what do you think of this premise?"), reply warmly and conversationally in "assistant_message". DO NOT force empty CRUD actions or sound like a robot executor ("Directive processed").
-   - If the Director is brainstorming, bounce ideas back, ask compelling story questions, and explore tension, character secrets, and narrative stakes together.
-   - Only include items in "actions" if the Director explicitly asks for project changes, or if the creative direction clearly calls for specific scene additions, deletions, reordering, location changes, or character creation.
-2. If actions are taken, clearly and collegially explain what you refined across the reel in "assistant_message".
-3. Never use emojis. Keep the tone grounded, collegial, and cinematic.
-
-AVAILABLE ACTIONS YOU CAN EMIT IN "actions" (ONLY WHEN THE DIRECTOR REQUESTS OR DIRECTS PROJECT MODIFICATIONS):
-1. {"type": "create_character", "name": "Name", "role": "Role", "archetype": "Archetype", "confidence": 0-100, "verbalPacing": 0-100, "subtextRatio": "high"|"low", "personalityPreset": "Preset", "objective": "Goal"}
-2. {"type": "update_character", "name": "Name", "patch": {"confidence": 95, "verbalPacing": 80, "speechStyle": "...", "objective": "..."}}
-3. {"type": "delete_character", "name": "Name"}
-4. {"type": "replace_character", "name": "Old Name", "replacement": {"name": "New Name", "role": "...", "archetype": "...", "confidence": 85, "verbalPacing": 70, "objective": "..."}}
-5. {"type": "create_node", "nodeType": "clip"|"note"|"actor"|"personality"|"quirks"|"scene"|"script"|"chemistry"|"storyboard"|"floorplan"|"tensionCurve"|"tableRead"|"market", "title": "...", "data": {...}}
-6. {"type": "delete_node", "nodeId": "nodeId or name"}
-7. {"type": "update_node_data", "nodeId": "nodeId or name", "patch": {...}}
-8. {"type": "connect_nodes", "source": "nodeId or name", "target": "nodeId or name", "relationship": "Friction"|"Alliance"|"Rivalry"|"Mentor"|"Style Sync"|"Plot Seed"}
-9. {"type": "sever_wire", "source": "nodeId or name", "target": "nodeId or name"}
-10. {"type": "update_screenplay", "screenplayText": "...", "summary": "..."}}
-11. {"type": "update_scene_meta", "title": "...", "stakes": "..."}
-12. {"type": "update_project_meta", "patch": {"title": "...", "logline": "...", "genre": "...", "directorStyle": "...", "narrativeFormat": "feature"|"pilot"|"short", "targetRuntimeMinutes": 110}}
-13. {"type": "auto_tidy_backlot"}
-14. {"type": "create_take_milestone", "title": "Milestone Title", "description": "..."}}
-15. {"type": "create_scene", "title": "Scene Title", "slugline": "INT/EXT. LOCATION - DAY/NIGHT", "summary": "Dramatic stakes & narrative progression", "location": "Location Name", "castPresent": ["Character 1", "Character 2"], "durationSeconds": 180, "position": "end"|"start"|number, "screenplayText": "Screenplay content..."}
-16. {"type": "delete_scene", "sceneIdentifier": 2 (sceneNumber) | "scene-id" | "Scene Title"}
-17. {"type": "replace_scene", "sceneIdentifier": 2 (sceneNumber) | "scene-id" | "Scene Title", "replacement": {"title": "...", "slugline": "...", "summary": "...", "location": "...", "durationSeconds": 180, "castPresent": ["..."], "screenplayText": "..."}}
-18. {"type": "reorder_scenes", "sceneOrder": [2, 1, 3] (new chronological order of scene numbers, IDs, or titles)}
-19. {"type": "move_scene", "sceneIdentifier": 2, "targetIndex": 0, "direction": "up"|"down"}
-20. {"type": "update_scene", "sceneIdentifier": 2, "patch": {"title": "...", "slugline": "...", "summary": "...", "location": "...", "durationSeconds": 180, "castPresent": ["..."], "screenplayText": "..."}}
-21. {"type": "create_story_event", "atSeconds": 120, "characterName": "Elena", "eventType": "known_fact"|"unaware_of"|"location"|"objective"}
-22. {"type": "delete_story_event", "identifier": 120 (atSeconds) | "Elena" | "objective"}
-23. {"type": "replace_story_event", "identifier": 120, "replacement": {"atSeconds": 150, "characterName": "Elena", "eventType": "objective"}}
-24. {"type": "lock_location", "sceneIdentifier": 2 (sceneNumber) | "scene-id" | "Scene Title", "locationName": "Venue Name", "candidateId": "optional-candidate-id"}
-25. {"type": "unlock_location", "sceneIdentifier": 2 (sceneNumber) | "scene-id"}
-26. {"type": "set_scene_location", "sceneIdentifier": 2, "location": "New Location Setting", "shootRegion": "City/Region", "locationBudget": 12000}
-27. {"type": "add_location_candidate", "sceneIdentifier": 2, "candidate": {"name": "Venue Name", "category": "practical"|"warehouse"|"rooftop"|"vault"|"studio"|"historic", "region": "City/State", "day_rate": 2500, "permit_fee": 400, "film_precedent": "Movie Title", "director": "Director Name", "why": "Why it fits", "practical_notes": "...", "environment_type": "practical"|"studio_stage"|"green_screen", "auto_lock": true}}
-28. {"type": "set_location_budget", "sceneIdentifier": optional 2, "budget": 15000, "locationsPct": 20}
-29. {"type": "set_shoot_region", "shootRegion": "New York, NY" | "London, UK" | "Los Angeles, CA", "sceneIdentifier": optional 2}
-30. {"type": "create_score_take", "sceneIdentifier": 2, "title": "Score Cue", "prompt": "Tense cinematic strings", "durationSec": 30|60|90, "scoreType": "score"|"source"|"vocal", "model": "Lyria 3 Pro"|"Lyria 3 Clip", "instruments": ["Strings", "Synth Bass"], "dynamicArc": "slow-burn"|"crescendo"|"staccato", "lyricsText": "Optional vocal lyrics..."}
-31. {"type": "set_master_score", "sceneIdentifier": 2, "takeNumber": 1}
-32. {"type": "delete_score_take", "sceneIdentifier": 2, "takeNumber": 1}
-33. {"type": "attach_asset", "assetName": "Sub-Level Concrete Vault", "targetType": "scene"|"character"|"score_moodboard", "targetIdentifier": 2|"Marcus", "role": "plate"|"face"|"body"|"moodboard"}
-34. {"type": "create_asset_record", "name": "Asset Name", "category": "location"|"character_face"|"character_body"|"style"|"video"|"audio"|"map", "url": "/assets/...", "tags": ["tag1", "tag2"]}
-35. {"type": "generate_timeline_moment", "sceneIdentifier": 2, "timestampSec": 45, "prompt": "Marcus confronting Elena under harsh neon rim lighting", "stylePreset": "anamorphic_35mm", "cameraFraming": "wide_master"}
-36. {"type": "switch_view", "tab": "planning"|"simulation"|"generation"|"showrunner", "subview": "canvas"|"timeline"|"score"|"video"|"location"|"floorplan"|"assets"}
-
-OUTPUT FORMAT:
-You MUST respond with a single, valid, raw JSON object matching:
-{
-  "thought_process": "Detailed step-by-step creative reasoning on the director's true intent and how to collaborate or structure the narrative",
-  "assistant_message": "Warm, perceptive, collegiate Hollywood Showrunner response",
-  "actions": [ ... list of action objects, or empty [] if purely conversational ... ]
-}
-Do NOT wrap in markdown quotes or backticks if possible, return clean parseable JSON.
-`;
+// The query the sidecar actually runs to ground the response (real
+// `cinematic_precedents` rows). Surfaced to the UI's ClickHouse inspector.
+const CLICKHOUSE_PRECEDENTS_SQL =
+  "SELECT genre, trope, historical_reference, tension_level, commercial_territory, audience_retention_pct, precedent_example " +
+  "FROM cinematic_precedents ORDER BY audience_retention_pct DESC LIMIT 3";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const userPrompt = typeof body?.userPrompt === "string" 
-      ? body.userPrompt.trim() 
-      : typeof body?.instruction === "string" 
-      ? body.instruction.trim() 
+    const userPrompt = typeof body?.userPrompt === "string"
+      ? body.userPrompt.trim()
+      : typeof body?.instruction === "string"
+      ? body.instruction.trim()
       : typeof body?.message === "string"
       ? body.message.trim()
       : "";
@@ -80,7 +41,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "userPrompt or instruction is required" }, { status: 400 });
     }
 
-    // First: Delegate to Python agent-service's Google ADK Showrunner agent
+    // 1. Canonical path: Python agent-service owns the Showrunner prompt and the
+    //    Gemini/ADK invocation.
     try {
       const pythonRes = await executeShowrunnerDirective({
         userPrompt,
@@ -98,25 +60,23 @@ export async function POST(req: NextRequest) {
         events: project.events,
       });
 
-      if (pythonRes && (pythonRes.actions || pythonRes.assistant_message)) {
+      // `_fallback: true` means the sidecar could not parse the model's JSON and
+      // is returning a canned acknowledgement. Previously that was passed
+      // straight through, so a parse failure looked to the Director like a
+      // successful no-op. Fall through to the deterministic engine instead.
+      if (pythonRes && !pythonRes._fallback && (pythonRes.actions || pythonRes.assistant_message)) {
         return NextResponse.json(pythonRes);
       }
+      if (pythonRes?._fallback) {
+        console.warn("Showrunner agent reported a structured-output fallback; using local deterministic engine.");
+      }
     } catch (agentErr) {
-      console.warn("Python agent-service showrunner directive unavailable, falling back:", agentErr);
+      console.warn("Python agent-service showrunner directive unavailable, using local deterministic engine:", agentErr);
     }
 
-    const apiKey =
-      process.env.GOOGLE_API_KEY ||
-      process.env.GEMINI_API_KEY ||
-      "";
-
-    // Ground the Executive AI in real ClickHouse cinematic precedent data —
-    // the same `cinematic_precedents` table & query used by the market/territory
-    // views, so the commander's creative reasoning is backed by real rows,
-    // not an invented "studio_commander" telemetry string.
-    const CLICKHOUSE_PRECEDENTS_SQL =
-      "SELECT genre, trope, historical_reference, tension_level, commercial_territory, audience_retention_pct, precedent_example " +
-      "FROM cinematic_precedents ORDER BY audience_retention_pct DESC LIMIT 3";
+    // 2. Precedent grounding — these are real rows from the sidecar's
+    //    ClickHouse `cinematic_precedents` table (hand-authored demo benchmark
+    //    rows; see the note in agent-service/app/services/clickhouse_store.py).
     let precedentsCited: CitedPrecedent[] = [];
     try {
       const allPrecedents = await getPrecedents(project.genre || "");
@@ -125,117 +85,7 @@ export async function POST(req: NextRequest) {
       console.warn("Commander precedent grounding unavailable:", precedentErr);
     }
 
-    const precedentContext = precedentsCited.length
-      ? precedentsCited
-          .map(
-            (p) =>
-              `- ${p.historical_reference} | ${p.trope} | Tension ${p.tension_level}/10 | ${p.audience_retention_pct}% retention (${p.commercial_territory})`
-          )
-          .join("\n")
-      : "- No ClickHouse precedent rows available for this genre.";
-
-    const scenesList = Array.isArray(project.scenes) ? project.scenes : [];
-    const scenesContext = scenesList.length > 0
-      ? scenesList
-          .map(
-            (s: any, idx: number) => {
-              const scriptText = (s.screenplayText || "").trim();
-              const scriptSnip = scriptText.length > 250 ? scriptText.slice(0, 250) + "..." : (scriptText || "(No script drafted)");
-              const locked = s.locationCandidates?.find((c: any) => c.candidate_id === s.selectedLocationCandidateId);
-              const locInfo = locked
-                ? `Locked Venue: "${locked.name}" ($${(locked.estimated_cost?.day_rate || 0).toLocaleString()}/day, ${locked.region || s.shootRegion || "Production Base"})`
-                : `Setting: "${s.location || "TBD"}" (Region: ${s.shootRegion || project.shootRegion || "Base"}, Budget: $${s.locationBudget ? s.locationBudget.toLocaleString() : "Default"}, Scouted Candidates: ${s.locationCandidates?.length || 0})`;
-              const momentsCount = s.timelineMoments?.length || 0;
-              const scoresCount = s.scoreTakes?.length || 0;
-              const activeScore = s.scoreTakes?.find((t: any) => t.isMaster) || s.scoreTakes?.[0];
-              const scoreInfo = scoresCount > 0 ? `${scoresCount} score takes (Active: "${activeScore?.title || "Score"}", ${activeScore?.model || "Lyria 3"})` : "No score composed";
-              return `  - Scene ${s.sceneNumber || idx + 1}: "${s.title || "Scene"}" (${s.slugline || ""}) | Duration: ${s.durationSeconds || 120}s | Cast: ${(s.castPresent || []).join(", ") || "None"} | Stakes: ${s.summary || "N/A"}${s.id === project.activeSceneId ? " [CURRENT ACTIVE SCENE]" : ""}\n    Location: ${locInfo}\n    Audio & Visual Staging: [Timeline Moments: ${momentsCount} generated stills] | [Music: ${scoreInfo}]\n    Script snippet: "${scriptSnip.replace(/\n/g, ' ')}"`;
-            }
-          )
-          .join("\n")
-      : "  - Single scene project";
-
-    const eventsList = Array.isArray(project.events) ? project.events : [];
-    const eventsContext = eventsList.length > 0
-      ? eventsList
-          .map((e: any) => `  - Beat at ${e.atSeconds || 0}s: ${e.characterName || "Character"} (${e.eventType || "event"})`)
-          .join("\n")
-      : "  - No story beat markers";
-
-    const assetsList = Array.isArray(project.assets) ? project.assets : [];
-    const assetsContext = assetsList.length > 0
-      ? assetsList.slice(0, 12).map((a: any) => `  - "${a.name}" [Category: ${a.category}] [Tags: ${(a.tags || []).join(", ")}]`).join("\n")
-      : "  - Seeded plates & character portraits available in Asset Hub";
-
-    // Build comprehensive project context for Gemini
-    const projectContext = `
-CURRENT PROJECT CONTEXT:
-- Title: ${project.title || "Untitled"}
-- Genre: ${project.genre || "Drama"}
-- Premise: ${project.premise || "N/A"}
-- Director Style: ${project.directorStyle || "Cinematic"}
-- Production Base Shoot Region: ${project.shootRegion || "Los Angeles, CA"}
-- Budget & Allocation: $${(project.budget || 250000).toLocaleString()} (Locations: ${project.budgetAllocation?.locationsPct ?? 15}%)
-- Active Scene Title: ${project.sceneTitle || "Scene 01"}
-- Active Scene Stakes: ${project.sceneSummary || "N/A"}
-- Characters: ${(project.characters || []).map((c: any) => `${c.name} (${c.archetype}, ${c.role})`).join(", ") || "None"}
-- Multi-Scene Sequence Reel (with locations, music cues & timeline moments):
-${scenesContext}
-- Available Studio Assets (Asset Hub):
-${assetsContext}
-- Timeline Story Beats:
-${eventsContext}
-- Existing Nodes: ${(project.nodes || []).map((n: any) => `${n.id} (${n.type})`).join(", ")}
-- Existing Wires: ${(project.edges || []).map((e: any) => `${e.source} -> ${e.target} [${e.data?.relationship || "wire"}]`).join(", ")}
-- Active Scene Screenplay Excerpt:
-${(project.screenplayText || "").slice(0, 1500) || "(No script drafted yet)"}
-
-CLICKHOUSE GROUNDING (real cinematic precedent benchmarks for this genre):
-${precedentContext}
-`;
-
-    if (apiKey) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`;
-        const contents = [
-          {
-            role: "user",
-            parts: [
-              {
-                text: `${SYSTEM_PROMPT}\n\n${projectContext}\n\nDIRECTOR'S COMMAND: "${userPrompt}"\n\nReturn strictly valid JSON:`,
-              },
-            ],
-          },
-        ];
-
-        const geminiRes = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents,
-            generationConfig: {
-              temperature: 0.3,
-              responseMimeType: "application/json",
-            },
-          }),
-        });
-
-        if (geminiRes.ok) {
-          const geminiData = await geminiRes.json();
-          const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawText) {
-            const parsed = JSON.parse(rawText) as CommanderExecutionResponse;
-            parsed.precedents_cited = precedentsCited;
-            parsed.clickhouse_query_sql = precedentsCited.length ? CLICKHOUSE_PRECEDENTS_SQL : undefined;
-            return NextResponse.json(parsed);
-          }
-        }
-      } catch (geminiErr) {
-        console.warn("Direct Gemini call error, falling back to local reasoning:", geminiErr);
-      }
-    }
-
-    // Fallback: Local Semantic Reasoning Engine
+    // 3. Deterministic local engine — explicit directive patterns only.
     const localActions: StudioAction[] = [];
     const promptLower = userPrompt.toLowerCase();
 
@@ -244,7 +94,6 @@ ${precedentContext}
     let reply = isGreeting
       ? `Good to have you in the writers' room. We've got the slate for "${project.title || "our film"}" open and ready. How would you like to build out the sequence reel, sharpen the character arcs, or calibrate dramatic tension today?`
       : `I have reviewed your note regarding "${userPrompt}". We have our sequence reel grounded on the current slate—what specific scenes or character beats would you like to explore next?`;
-
 
     // Character addition
     const addCharMatch = userPrompt.match(/(?:add|create|introduce)\s+(?:a\s+)?(?:character\s+)?(?:named\s+)?([A-Z][a-zA-Z0-9_-]+)/i);

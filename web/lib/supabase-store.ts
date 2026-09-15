@@ -96,28 +96,23 @@ export function rowToProject(r: any): ProjectData {
 
 /**
  * Loads projects from Supabase.
- * When userId is provided, returns projects owned by that user plus public seed templates (where user_id IS NULL).
- * When userId is not provided (guest), returns unassigned public/seed templates.
+ * Projects are owned by a single account. There are no shared/guest rows any
+ * more, so a call without a userId yields nothing rather than falling back to
+ * globally-visible seed templates.
  */
 export async function fetchProjectsFromSupabase(userId?: string | null): Promise<ProjectData[] | null> {
   if (!isSupabaseConfigured()) return null;
+  if (!userId) return [];
 
   try {
     const client = typeof window === "undefined" ? getSupabaseAdminClient() || getSupabaseClient() : getSupabaseClient();
     if (!client) return null;
 
-    let query = client
+    const { data, error } = await client
       .from("projects")
       .select("*")
+      .eq("user_id", userId)
       .order("updated_at", { ascending: false });
-
-    if (userId) {
-      query = query.or(`user_id.eq.${userId},user_id.is.null`);
-    } else {
-      query = query.is("user_id", null);
-    }
-
-    const { data, error } = await query;
 
     if (error) {
       console.warn("[SupabaseStore] Could not fetch projects:", error.message);
@@ -251,10 +246,11 @@ export async function fetchNotesFromSupabase(projectId?: string, userId?: string
     if (projectId) {
       query = query.eq("project_id", projectId);
     }
+    // Notes belong to an account; there are no shared/guest note rows any more.
     if (userId) {
-      query = query.or(`user_id.eq.${userId},user_id.is.null`);
+      query = query.eq("user_id", userId);
     } else {
-      query = query.is("user_id", null);
+      return [];
     }
 
     const { data, error } = await query;
@@ -369,10 +365,11 @@ export async function fetchTalentFromSupabase(userId?: string | null): Promise<a
     if (!client) return null;
 
     let query = client.from("talent_vault").select("*").order("created_at", { ascending: false });
+    // Vault entries belong to an account; there are no shared/guest rows any more.
     if (userId) {
-      query = query.or(`user_id.eq.${userId},user_id.is.null`);
+      query = query.eq("user_id", userId);
     } else {
-      query = query.is("user_id", null);
+      return [];
     }
 
     const { data, error } = await query;
@@ -549,10 +546,12 @@ export async function fetchAssetsFromSupabase(
 
     let query = client.from("assets").select("*").order("created_at", { ascending: false });
 
+    // Assets belong to an account. There are no shared/guest asset rows any
+    // more, so an unauthenticated call returns nothing.
     if (userId) {
-      query = query.or(`user_id.is.null,user_id.eq.${userId}`);
+      query = query.eq("user_id", userId);
     } else {
-      query = query.is("user_id", null);
+      return [];
     }
     if (projectId) {
       query = query.or(`project_id.is.null,project_id.eq.${projectId}`);

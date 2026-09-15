@@ -32,7 +32,7 @@ export function TensionCurveView({
   currentTimeSeconds,
   onScrubTime,
   className,
-  projectId = "vault-heist-demo",
+  projectId = "",
   characters = [],
   events = [],
   sceneTitle,

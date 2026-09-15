@@ -4,7 +4,12 @@
 -- Supports:
 -- 1. Full Supabase Auth integration (email/password, magic link, OAuth)
 -- 2. User-isolated projects, scratchpads, and revision snapshots
--- 3. Anonymous/guest sandbox mode for instant demo walkthroughs
+-- 3. Cloud-only storage: every row is owned by an account (user_id NOT NULL
+--    rows only). There is no anonymous/guest mode — the app requires sign-in,
+--    and no browser-side persistence exists.
+--
+-- Existing databases that still hold anonymous `user_id IS NULL` demo rows
+-- should run supabase/cleanup-guest-data.sql once.
 -- ============================================================================
 
 -- 1. PROJECTS TABLE
@@ -134,6 +139,24 @@ ON CONFLICT (id) DO UPDATE SET public = true;
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
+--
+-- Threat model: the browser only ever holds the publishable (anon) key, so
+-- anything an anon policy permits is effectively world-writable. The
+-- application reads and writes these tables through Next.js API routes, which
+-- prefer the service-role admin client (bypasses RLS) and derive user_id from a
+-- verified auth token — see web/app/api/projects/route.ts and
+-- web/lib/supabase-store.ts.
+--
+-- Therefore the policies below grant nothing to `anon` and restrict
+-- `authenticated` users to their own rows. Seed/demo templates are stored with
+-- user_id IS NULL and are served through the API's admin client, NOT by
+-- exposing them as rows any visitor can write. The previous
+-- `user_id IS NULL OR user_id = auth.uid()` policies did expose them: because
+-- WITH CHECK also accepted `user_id IS NULL`, an anonymous client could update
+-- or delete every shared demo slate.
+--
+-- generation_cache intentionally gets NO policies at all: it is a server-side
+-- cache and must only ever be touched with the service-role key.
 
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scratchpad_notes ENABLE ROW LEVEL SECURITY;
@@ -144,7 +167,7 @@ ALTER TABLE public.assets ENABLE ROW LEVEL SECURITY;
 
 DO $$ 
 BEGIN
-    -- Drop old policies if refreshing
+    -- Drop legacy policies if refreshing (idempotent re-run of this file).
     DROP POLICY IF EXISTS "Allow public read/write projects" ON public.projects;
     DROP POLICY IF EXISTS "Allow public read/write scratchpad" ON public.scratchpad_notes;
     DROP POLICY IF EXISTS "Allow public read/write talent" ON public.talent_vault;
@@ -155,70 +178,106 @@ BEGIN
     DROP POLICY IF EXISTS "Talent access policy" ON public.talent_vault;
     DROP POLICY IF EXISTS "Snapshots access policy" ON public.project_snapshots;
     DROP POLICY IF EXISTS "Assets access policy" ON public.assets;
+    DROP POLICY IF EXISTS "Generation cache access policy" ON public.generation_cache;
 
-    -- Flexible policies: Authenticated users manage their own rows, and
-    -- guest/demo rows (where user_id IS NULL) remain readable and accessible.
-    CREATE POLICY "Projects access policy" ON public.projects
-        FOR ALL USING (
-            user_id IS NULL OR user_id = auth.uid()
-        )
-        WITH CHECK (
-            user_id IS NULL OR user_id = auth.uid()
-        );
+    DROP POLICY IF EXISTS "Projects select own" ON public.projects;
+    DROP POLICY IF EXISTS "Projects insert own" ON public.projects;
+    DROP POLICY IF EXISTS "Projects update own" ON public.projects;
+    DROP POLICY IF EXISTS "Projects delete own" ON public.projects;
+    DROP POLICY IF EXISTS "Scratchpad select own" ON public.scratchpad_notes;
+    DROP POLICY IF EXISTS "Scratchpad insert own" ON public.scratchpad_notes;
+    DROP POLICY IF EXISTS "Scratchpad update own" ON public.scratchpad_notes;
+    DROP POLICY IF EXISTS "Scratchpad delete own" ON public.scratchpad_notes;
+    DROP POLICY IF EXISTS "Talent select own" ON public.talent_vault;
+    DROP POLICY IF EXISTS "Talent insert own" ON public.talent_vault;
+    DROP POLICY IF EXISTS "Talent update own" ON public.talent_vault;
+    DROP POLICY IF EXISTS "Talent delete own" ON public.talent_vault;
+    DROP POLICY IF EXISTS "Snapshots select own" ON public.project_snapshots;
+    DROP POLICY IF EXISTS "Snapshots insert own" ON public.project_snapshots;
+    DROP POLICY IF EXISTS "Snapshots update own" ON public.project_snapshots;
+    DROP POLICY IF EXISTS "Snapshots delete own" ON public.project_snapshots;
+    DROP POLICY IF EXISTS "Assets select own" ON public.assets;
+    DROP POLICY IF EXISTS "Assets insert own" ON public.assets;
+    DROP POLICY IF EXISTS "Assets update own" ON public.assets;
+    DROP POLICY IF EXISTS "Assets delete own" ON public.assets;
 
-    CREATE POLICY "Scratchpad access policy" ON public.scratchpad_notes
-        FOR ALL USING (
-            user_id IS NULL OR user_id = auth.uid()
-        )
-        WITH CHECK (
-            user_id IS NULL OR user_id = auth.uid()
-        );
+    -- Owner-scoped policies. Anonymous clients get no access to these tables at
+    -- all; signed-in users may only read and mutate rows they own.
+    CREATE POLICY "Projects select own" ON public.projects
+        FOR SELECT TO authenticated USING (user_id = auth.uid());
+    CREATE POLICY "Projects insert own" ON public.projects
+        FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Projects update own" ON public.projects
+        FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Projects delete own" ON public.projects
+        FOR DELETE TO authenticated USING (user_id = auth.uid());
 
-    CREATE POLICY "Talent access policy" ON public.talent_vault
-        FOR ALL USING (
-            user_id IS NULL OR user_id = auth.uid()
-        )
-        WITH CHECK (
-            user_id IS NULL OR user_id = auth.uid()
-        );
+    CREATE POLICY "Scratchpad select own" ON public.scratchpad_notes
+        FOR SELECT TO authenticated USING (user_id = auth.uid());
+    CREATE POLICY "Scratchpad insert own" ON public.scratchpad_notes
+        FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Scratchpad update own" ON public.scratchpad_notes
+        FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Scratchpad delete own" ON public.scratchpad_notes
+        FOR DELETE TO authenticated USING (user_id = auth.uid());
 
-    CREATE POLICY "Snapshots access policy" ON public.project_snapshots
-        FOR ALL USING (
-            user_id IS NULL OR user_id = auth.uid()
-        )
-        WITH CHECK (
-            user_id IS NULL OR user_id = auth.uid()
-        );
+    CREATE POLICY "Talent select own" ON public.talent_vault
+        FOR SELECT TO authenticated USING (user_id = auth.uid());
+    CREATE POLICY "Talent insert own" ON public.talent_vault
+        FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Talent update own" ON public.talent_vault
+        FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Talent delete own" ON public.talent_vault
+        FOR DELETE TO authenticated USING (user_id = auth.uid());
 
-    CREATE POLICY "Assets access policy" ON public.assets
-        FOR ALL USING (
-            user_id IS NULL OR user_id = auth.uid()
-        )
-        WITH CHECK (
-            user_id IS NULL OR user_id = auth.uid()
-        );
+    CREATE POLICY "Snapshots select own" ON public.project_snapshots
+        FOR SELECT TO authenticated USING (user_id = auth.uid());
+    CREATE POLICY "Snapshots insert own" ON public.project_snapshots
+        FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Snapshots update own" ON public.project_snapshots
+        FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Snapshots delete own" ON public.project_snapshots
+        FOR DELETE TO authenticated USING (user_id = auth.uid());
 
-    CREATE POLICY "Generation cache access policy" ON public.generation_cache
-        FOR ALL USING (true)
-        WITH CHECK (true);
+    CREATE POLICY "Assets select own" ON public.assets
+        FOR SELECT TO authenticated USING (user_id = auth.uid());
+    CREATE POLICY "Assets insert own" ON public.assets
+        FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Assets update own" ON public.assets
+        FOR UPDATE TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+    CREATE POLICY "Assets delete own" ON public.assets
+        FOR DELETE TO authenticated USING (user_id = auth.uid());
 
-    -- Storage RLS policies for cinema_assets bucket
-    -- NOTE: Because cinema_assets is a PUBLIC bucket, public URLs (CDN downloads)
-    -- work automatically without a SELECT policy. Omitting a broad SELECT policy on
-    -- storage.objects prevents unauthorized users from listing/scraping directory contents.
+    -- NOTE: public.generation_cache deliberately has RLS enabled and zero
+    -- policies. Anon and authenticated requests are denied; only the
+    -- service-role key (web/lib/generation-cache.ts) can read or write it.
+    -- Previously `FOR ALL USING (true) WITH CHECK (true)` made the shared
+    -- generation cache publicly readable, poisonable, and clearable.
+
+    -- Storage RLS policies for cinema_assets bucket.
+    -- NOTE: cinema_assets is a PUBLIC bucket, so public URLs (CDN downloads)
+    -- work without a SELECT policy. Deliberately omitting a broad SELECT policy
+    -- on storage.objects prevents unauthorized listing/scraping of directory
+    -- contents.
     DROP POLICY IF EXISTS "Public view cinema_assets" ON storage.objects;
     DROP POLICY IF EXISTS "Public insert cinema_assets" ON storage.objects;
     DROP POLICY IF EXISTS "Public update cinema_assets" ON storage.objects;
     DROP POLICY IF EXISTS "Public delete cinema_assets" ON storage.objects;
+    DROP POLICY IF EXISTS "Authenticated insert cinema_assets" ON storage.objects;
+    DROP POLICY IF EXISTS "Authenticated update cinema_assets" ON storage.objects;
+    DROP POLICY IF EXISTS "Authenticated delete cinema_assets" ON storage.objects;
 
-    -- Only allow inserting, updating, and deleting
-    CREATE POLICY "Public insert cinema_assets" ON storage.objects
-        FOR INSERT WITH CHECK (bucket_id = 'cinema_assets');
+    -- Writes require an authenticated session. Server-side uploads use the
+    -- service-role key (see web/lib/media-storage-service.ts); when that key is
+    -- absent the upload route falls back to local disk rather than silently
+    -- accepting anonymous bucket writes.
+    CREATE POLICY "Authenticated insert cinema_assets" ON storage.objects
+        FOR INSERT TO authenticated WITH CHECK (bucket_id = 'cinema_assets');
 
-    CREATE POLICY "Public update cinema_assets" ON storage.objects
-        FOR UPDATE USING (bucket_id = 'cinema_assets');
+    CREATE POLICY "Authenticated update cinema_assets" ON storage.objects
+        FOR UPDATE TO authenticated USING (bucket_id = 'cinema_assets') WITH CHECK (bucket_id = 'cinema_assets');
 
-    CREATE POLICY "Public delete cinema_assets" ON storage.objects
-        FOR DELETE USING (bucket_id = 'cinema_assets');
+    CREATE POLICY "Authenticated delete cinema_assets" ON storage.objects
+        FOR DELETE TO authenticated USING (bucket_id = 'cinema_assets');
 END $$;
 

@@ -17,6 +17,7 @@ import { toast } from "@/components/ui/toast";
 import { notifyIfFallback } from "@/lib/fallback-notice";
 import type { FilmFusionResponse } from "@/lib/agent-service";
 import { getAllProjects, saveProject, type ProjectData, type ProjectCharacter } from "@/lib/project-store";
+import { useAuth } from "@/lib/auth-context";
 
 interface FilmFusionDialogProps {
   open: boolean;
@@ -30,9 +31,10 @@ export function FilmFusionDialog({
   onFusionComplete,
 }: FilmFusionDialogProps) {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const [projects, setProjects] = React.useState<ProjectData[]>([]);
-  const [selectedProjAId, setSelectedProjAId] = React.useState<string>("vault-heist-demo");
-  const [selectedProjBId, setSelectedProjBId] = React.useState<string>("space-airlock-demo");
+  const [selectedProjAId, setSelectedProjAId] = React.useState<string>("");
+  const [selectedProjBId, setSelectedProjBId] = React.useState<string>("");
   const [isFusing, setIsFusing] = React.useState(false);
   const [directive, setDirective] = React.useState(
     "The heist crew infiltrates an orbital research station during an emergency quarantine breach, forcing opposing survivors into an armed standoff."
@@ -106,6 +108,15 @@ export function FilmFusionDialog({
 
   const handleEnterFusedStudio = () => {
     if (fusionResult) {
+      // The fused slate is saved to the account and opened in the studio, both
+      // of which require a session. Public pages gate the dialog before it
+      // opens; this is the backstop for any other caller.
+      if (!isAuthenticated) {
+        onOpenChange(false);
+        router.push("/auth?mode=signup&redirect=%2Fdashboard");
+        return;
+      }
+
       const fusedChars: ProjectCharacter[] = fusionResult.character_remappings.map((remap) => ({
         name: remap.original_name,
         archetype: `${remap.fused_role} (${remap.alignment})`,

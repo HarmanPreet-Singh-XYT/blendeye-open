@@ -1,8 +1,7 @@
-# Agentic Cinema — Product Spec (Hackathon Scope)
+# Agentic Cinema — Product Spec
 
-> Built for the **Google Cloud Agentic Cinema Hackathon** — ClickHouse partner track.
 > Full original vision preserved in `idea-full-vision.md`. This document is the scoped-down
-> product actually being built for the 6-day deadline (2026-09-08/09).
+> product actually being built.
 
 ---
 
@@ -45,16 +44,15 @@ is in service of making that moment land.
 
 ---
 
-## 2. AI / Platform Constraints (hackathon rules)
+## 2. AI / Platform Constraints
 
-- **Runtime AI must be Google Cloud only**: Gemini models via Google Cloud Agent Builder / ADK,
+- **Runtime AI is Google Cloud only**: Gemini models via Google Cloud Agent Builder / ADK,
   Imagen 3, Gemini TTS. No Anthropic/OpenAI/AWS/Microsoft AI in the shipped product's runtime
   logic. (Claude Code is fine as a dev tool — this restricts what ships, not how it's built.)
-- **One partner track**: ClickHouse. The `mcp-clickhouse` server must be actually imported and
-  called at runtime, not just named in the README.
-- **New project**, built entirely during the contest period.
+- **ClickHouse is the only external data plane.** The `mcp-clickhouse` server must be actually
+  imported and called at runtime, not just named in the README.
 - **Public repo**, open-source license file detectable at the top of the repo page.
-- **Web platform**, hosted URL required, 3-minute demo video (YouTube/Vimeo, public, English).
+- **Web platform**, hosted URL.
 
 ---
 
@@ -63,7 +61,7 @@ is in service of making that moment land.
 | Store | Owns | Why |
 | --- | --- | --- |
 | **Supabase (Postgres)** | Projects, users, node graph structure (nodes/edges), generated script text, UI/session state | Relational + jsonb hybrid, fast to iterate schema, auth/realtime included |
-| **ClickHouse** | `story_events` (character, timestamp, fact, location, off-screen action) — the actual time-gate query target; secondary grounding dataset (box office / territory) | Required partner integration; genuinely the right tool for fast filtered scans over many timestamped rows, not just a compliance checkbox |
+| **ClickHouse** | `story_events` (character, timestamp, fact, location, off-screen action) — the actual time-gate query target; secondary grounding dataset (box office / territory) | Genuinely the right tool for fast filtered scans over many timestamped rows — the query pattern behind the time-gate mechanic |
 
 ClickHouse is not replacing Supabase — it's the backing store specifically for the
 timeline/knowledge-state mechanic, where its query pattern (`WHERE timestamp <= X`) is the
@@ -77,7 +75,7 @@ calls, invoked from Next.js as a stateless sidecar.
 
 ## 4. Feature Scope (this build)
 
-### Must-have (core loop, no partner deps except ClickHouse plumbing)
+### Must-have (core loop, no external deps except ClickHouse plumbing)
 1. **Node graph canvas** (React Flow) — inspiration/scene input → master script node.
 2. **Master script generation** — Gemini/ADK agent generates a scene from user input.
 3. **Character Perspective Sharder** — auto-derives per-character knowledge state
@@ -108,8 +106,8 @@ calls, invoked from Next.js as a stateless sidecar.
 ### Explicitly deprioritized / cut for this build
 - **YouTube/video-essay ingestion** — pushed to last/optional. A filmmaker pitching original
   work is unlikely to want visible sourcing from someone else's copyrighted video in a demo,
-  and it raises IP/rights questions given the hackathon's originality warranty. Not worth the
-  build time or the risk for this submission.
+  and it raises IP/rights questions around third-party footage. Not worth the build time or
+  the risk for this scope.
 - Budget/stripboard node, territory heatmap as a standalone tab, dream-casting chemistry bench,
   continuity sentry, dialogue subtext tuner, live bidirectional voice rehearsal, director's
   floor plan, cinematic precedents engine, multiverse/alternate takes. These are real ideas

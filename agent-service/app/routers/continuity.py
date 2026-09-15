@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-
-import time
 
 from app.agents.continuity_checker import build_continuity_agent
 from app.agents.runner import parse_json_from_llm, run_agent_once
@@ -71,7 +69,7 @@ async def check_continuity(req: ContinuityCheckRequest) -> ContinuityCheckRespon
                 for r in rows
             ]
             clickhouse_events_text = "\n".join(formatted_lines)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("ClickHouse query for continuity audit fell back: %s", e)
 
     # Fallback to default grounded knowledge events if project not yet sharded in ClickHouse
@@ -117,7 +115,7 @@ async def check_continuity(req: ContinuityCheckRequest) -> ContinuityCheckRespon
             clickhouse_query_executed=sql,
             issues=parsed_issues,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Failed to parse Continuity Audit JSON: %s", e)
 
     charA = req.characters[0] if req.characters else "Marcus"

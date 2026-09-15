@@ -68,6 +68,17 @@ def test_observability_api_endpoints():
     assert dist["total_requests"] > 0
     assert len(dist["roles"]) > 0
 
+    # mcp_status must be derived from real checks, not asserted strings.
+    mcp = data["mcp_status"]
+    assert set(mcp) == {"mcp_clickhouse", "mcp_grafana"}
+    for entry in mcp.values():
+        assert isinstance(entry["on_path"], bool)
+        assert isinstance(entry["verified"], bool)
+        assert isinstance(entry["state"], str)
+    # Regression guard: this field used to be a hardcoded capability brag.
+    assert "60+ tools" not in res.text
+    assert mcp["mcp_clickhouse"]["allow_write"] is False
+
     # 2. Test /observability/metrics (Prometheus exporter)
     res_metrics = client.get("/observability/metrics")
     assert res_metrics.status_code == 200
@@ -81,3 +92,27 @@ def test_observability_api_endpoints():
     bench_data = res_bench.json()
     assert bench_data["status"] == "success"
     assert "network_latencies" in bench_data
+
+
+def test_metrics_endpoint_reports_mcp_and_store_separately():
+    """`/metrics` used to report clickhouse_mcp: "online" purely because a
+    clickhouse-connect SELECT 1 succeeded — which says nothing about whether the
+    mcp-clickhouse subprocess is available. The two are now reported as
+    distinct fields.
+    """
+    client = TestClient(app)
+    res = client.get("/metrics")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["mcp_servers"]["clickhouse_mcp"] in ("online", "degraded", "unreachable")
+    assert data["clickhouse_store"] in ("online", "unreachable")
+    assert set(data["mcp_status"]) == {"mcp_clickhouse", "mcp_grafana"}
+
+    # The MCP claim must track the capability probe, never the SQL driver.
+    verified = data["mcp_status"]["mcp_clickhouse"]["verified"]
+    reported = data["mcp_servers"]["clickhouse_mcp"]
+    if data["clickhouse_store"] == "unreachable":
+        assert reported == "unreachable"
+    else:
+        assert reported == ("online" if verified else "degraded")

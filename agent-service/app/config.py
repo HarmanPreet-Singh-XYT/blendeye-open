@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Gemini / Google Cloud — required per hackathon rules (Google Cloud AI
+    # Gemini / Google Cloud — the runtime AI surface (Google Cloud AI
     # only). GOOGLE_GENAI_USE_VERTEXAI toggles Vertex AI vs. AI Studio auth.
     # NOTE: google-genai's Client reads GOOGLE_API_KEY etc. directly from
     # os.environ (see load_dotenv() above), not from this Settings object —
@@ -41,14 +41,14 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_secret_key: str = ""
 
-    # Parallel Web Systems — Partner Track Integration (Search & Web Grounding)
+    # Parallel Web Systems — Search & Web Grounding
     parallel_api_key: str = ""
 
-    # Grafana Labs — Partner Track Integration (Observability & MCP)
+    # Grafana Labs — Observability & MCP
     grafana_url: str = "https://blendeye.grafana.net"
     grafana_service_account_token: str = ""
 
-    # ClickHouse — the required partner track integration. Story Event
+    # ClickHouse — the primary external data plane. Story Event
     # Engine (see plan.md Layer 2) reads/writes here via mcp-clickhouse.
     # Defaults below target a local self-hosted container (see root
     # docker-compose.yml's `clickhouse` service: HTTP port 8123, no TLS).
@@ -69,8 +69,7 @@ class Settings(BaseSettings):
             return "localhost"
         v = v.strip()
         for prefix in ("https://", "http://"):
-            if v.startswith(prefix):
-                v = v[len(prefix):]
+            v = v.removeprefix(prefix)
         # Strip trailing slashes and inline ports if present
         v = v.rstrip("/")
         if ":" in v:
@@ -94,7 +93,7 @@ class Settings(BaseSettings):
                     parsed = json.loads(v_clean)
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed]
-                except Exception:
+                except Exception:  # noqa: BLE001
                     v_clean = v_clean[1:-1]
             return [origin.strip().strip("'").strip('"') for origin in v_clean.split(",") if origin.strip()]
         return ["*"]

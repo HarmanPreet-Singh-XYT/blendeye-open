@@ -4,13 +4,14 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getProjectById, saveProject, type ProjectData } from "@/lib/project-store";
 import { LocationBoard } from "@/components/cinema/location-board";
+import { AuthGate } from "@/components/cinema/auth-gate";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Film } from "lucide-react";
 
-export default function ProjectLocationsPage() {
+function ProjectLocationsWorkspace() {
   const params = useParams();
   const router = useRouter();
-  const projectId = (params?.projectId as string) || "vault-heist-demo";
+  const projectId = (params?.projectId as string) || "";
 
   const [project, setProject] = React.useState<ProjectData | null>(null);
 
@@ -68,5 +69,13 @@ export default function ProjectLocationsPage() {
         />
       </main>
     </div>
+  );
+}
+
+export default function ProjectLocationsPage() {
+  return (
+    <AuthGate>
+      <ProjectLocationsWorkspace />
+    </AuthGate>
   );
 }

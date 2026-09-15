@@ -73,39 +73,24 @@ export class StudioVersionControl {
     };
   }
 
-  private getStorageKey(): string {
-    return `cinema_vcs_${this.projectId}`;
-  }
-
+  /**
+   * Revision history is intentionally session-scoped.
+   *
+   * It used to be mirrored into localStorage, which made it survive a refresh
+   * but also made it a second source of truth alongside the cloud project —
+   * exactly the local-vs-cloud split this refactor removes. The durable,
+   * cross-session equivalent is the `project_snapshots` table; wiring this
+   * class to it needs its own API route and is not done here, so undo/redo
+   * now covers the current session only.
+   */
   private loadFromStorage() {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem(this.getStorageKey());
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed.history) && typeof parsed.currentIndex === "number") {
-          this.history = parsed.history;
-          this.currentIndex = Math.min(parsed.currentIndex, parsed.history.length - 1);
-        }
-      }
-    } catch (e) {
-      console.warn("Could not load version control history:", e);
-    }
+    // No browser persistence by design — see the comment above.
+    this.history = [];
+    this.currentIndex = -1;
   }
 
   private saveToStorage() {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem(
-        this.getStorageKey(),
-        JSON.stringify({
-          history: this.history.slice(-MAX_HISTORY),
-          currentIndex: this.currentIndex,
-        })
-      );
-    } catch (e) {
-      console.warn("Could not save version control history:", e);
-    }
+    // No browser persistence by design — see the comment above.
   }
 
   public subscribe(fn: () => void): () => void {

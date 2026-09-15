@@ -4,11 +4,12 @@ Enables real-time studio pipeline monitoring and Grafana Cloud dashboard integra
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 from typing import Any
 
 from fastapi import APIRouter, Response
-from pydantic import BaseModel
 
 from app.services.clickhouse_store import get_clickhouse_store
 from app.services.observability import (
@@ -16,10 +17,13 @@ from app.services.observability import (
     HTTP_REQUESTS_TOTAL,
     STORY_EVENTS_GAUGE,
     get_agentic_requests_summary,
+    get_mcp_status,
     get_prometheus_metrics,
     get_studio_health_status,
     measure_network_latencies,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/observability", tags=["observability"])
 
@@ -31,11 +35,11 @@ async def prometheus_metrics() -> Response:
     return Response(content=data, media_type=content_type)
 
 
-@router.get("/overview")
-async def studio_observability_overview() -> dict[str, Any]:
-    """Provides a unified observability snapshot for the studio's Grafana telemetry inspector."""
-    HTTP_REQUESTS_TOTAL.labels(method="GET", endpoint="/observability/overview", status="200").inc()
-
+def _collect_overview() -> dict[str, Any]:
+    """Synchronous collection body. Every dependency here (clickhouse-connect,
+    httpx) is blocking, so the route below runs this in a worker thread rather
+    than on the event loop.
+    """
     ch_latency = None
     events_count = 0
     precedents_count = 0
@@ -51,11 +55,14 @@ async def studio_observability_overview() -> dict[str, Any]:
             events_count = store.client.query("SELECT count() FROM story_events").result_rows[0][0]
             precedents_count = store.client.query("SELECT count() FROM cinematic_precedents").result_rows[0][0]
             STORY_EVENTS_GAUGE.set(events_count)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as e:  # noqa: BLE001
+        # ClickHouse telemetry is best-effort: the overview still renders with
+        # null/zero values so the dashboard degrades instead of 500ing.
+        logger.warning("ClickHouse telemetry unavailable for /observability/overview: %s", e)
 
     health = get_studio_health_status()
     agentic_summary = get_agentic_requests_summary()
+    mcp_status = get_mcp_status()
 
     return {
         "studio": "BlendEye Executive Studio Backlot",
@@ -89,16 +96,19 @@ async def studio_observability_overview() -> dict[str, Any]:
             },
         ],
         "network_latencies": health.get("network_latencies", []),
-        "mcp_status": {
-            "mcp_grafana": "active (60+ tools enabled: query_prometheus, query_loki_logs, list_dashboards)",
-            "mcp_clickhouse": "active (MergeTree story_events)",
-        },
+        "mcp_status": mcp_status,
     }
 
 
-@router.post("/benchmark")
-async def run_studio_benchmark() -> dict[str, Any]:
-    """Runs a real live telemetry benchmark across ClickHouse and external network dependencies."""
+@router.get("/overview")
+async def studio_observability_overview() -> dict[str, Any]:
+    """Provides a unified observability snapshot for the studio's Grafana telemetry inspector."""
+    HTTP_REQUESTS_TOTAL.labels(method="GET", endpoint="/observability/overview", status="200").inc()
+    return await asyncio.to_thread(_collect_overview)
+
+
+def _run_benchmark() -> dict[str, Any]:
+    """Synchronous benchmark body — see _collect_overview."""
     t_start = time.perf_counter()
 
     # 1. Real ClickHouse queries (5 executions)
@@ -112,8 +122,8 @@ async def run_studio_benchmark() -> dict[str, Any]:
                 elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
                 ch_latencies.append(elapsed_ms)
                 CLICKHOUSE_QUERY_LATENCY_MS.observe(elapsed_ms)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as e:  # noqa: BLE001
+                logger.warning("ClickHouse benchmark probe failed: %s", e)
 
     if ch_latencies:
         avg_ch = round(sum(ch_latencies) / len(ch_latencies), 2)
@@ -143,4 +153,10 @@ async def run_studio_benchmark() -> dict[str, Any]:
         "network_latencies": network_latencies,
         "grafana_cloud_status": "telemetry_emitted",
     }
+
+
+@router.post("/benchmark")
+async def run_studio_benchmark() -> dict[str, Any]:
+    """Runs a real live telemetry benchmark across ClickHouse and external network dependencies."""
+    return await asyncio.to_thread(_run_benchmark)
 

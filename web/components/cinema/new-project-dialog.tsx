@@ -489,7 +489,7 @@ export function NewProjectDialog({
                 </Badge>
               ) : (
                 <Badge variant="outline" className="font-mono text-[10px] text-amber-300 border-amber-500/30 bg-amber-500/10 px-2 py-0.5 hidden sm:inline-flex items-center gap-1">
-                  Guest Sandbox
+                  Not signed in
                 </Badge>
               )}
               <Badge variant="outline" className="font-mono text-[11px] text-accent border-accent/30 px-2 py-0.5">

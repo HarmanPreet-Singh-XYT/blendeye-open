@@ -1,6 +1,20 @@
 import type { Node, Edge } from "@xyflow/react";
 import type { StoryEventMarker } from "@/components/cinema/timeline-scrubber";
-import { DEFAULT_SEED_PROJECTS } from "@/lib/seed-projects";
+
+/**
+ * Storage model — cloud only, no browser persistence.
+ *
+ * Every collection below lives in an in-memory cache that is hydrated from
+ * Supabase through the Next.js API routes when a session starts, and dropped
+ * when it ends. Reads stay synchronous because they serve render paths that
+ * cannot await; writes apply optimistically to the cache and are mirrored to
+ * Supabase.
+ *
+ * Nothing about the user's work is written to localStorage/sessionStorage, so
+ * there is exactly one source of truth and no local-vs-cloud merge to
+ * reconcile. The only browser storage the app relies on is Supabase's own auth
+ * client session (which is what keeps you signed in across a refresh).
+ */
 
 export interface ProjectCharacter {
   name: string;
@@ -708,209 +722,156 @@ export interface ProjectData {
   totalScenesEstimate?: number;
 }
 
-export const SEED_PROJECTS: ProjectData[] = DEFAULT_SEED_PROJECTS;
+// ---------------------------------------------------------------------------
+// Session + in-memory cache
+// ---------------------------------------------------------------------------
 
 let activeUserId: string | null = null;
 let activeAuthToken: string | null = null;
 
+// `null` means "not hydrated yet" and is distinct from "hydrated, empty".
+let projectsCache: ProjectData[] | null = null;
+let talentVaultCache: ProjectCharacter[] | null = null;
+let scratchpadCache: ScratchpadNote[] | null = null;
+let hydrationPromise: Promise<void> | null = null;
+
+/** True once a signed-in session's data has been pulled from Supabase. */
+export function isStoreHydrated(): boolean {
+  return projectsCache !== null;
+}
+
+function clearCaches(): void {
+  projectsCache = null;
+  talentVaultCache = null;
+  scratchpadCache = null;
+  hydrationPromise = null;
+}
+
 /**
- * Sets the active authenticated user and optional Supabase access token.
- * This partitions local storage per account and authorizes backend Supabase API requests.
+ * Sets the active authenticated user and Supabase access token.
+ *
+ * Signing in drops any previous account's cached data and kicks off a cloud
+ * hydration; signing out drops the cache so one account's work can never be
+ * visible to the next session on the same browser.
  */
 export function setActiveUser(userId: string | null, token: string | null = null): void {
+  const accountChanged = activeUserId !== userId;
   activeUserId = userId;
   activeAuthToken = token;
+
+  if (accountChanged) {
+    clearCaches();
+  }
+
   if (typeof window !== "undefined") {
-    if (userId) {
-      try {
-        localStorage.setItem("agentic_cinema_active_uid", userId);
-        if (token) localStorage.setItem("agentic_cinema_active_token", token);
-
-        // Migrate guest custom projects to this user account if first time signing in
-        const migrationKey = `agentic_cinema_migrated_u_${userId}`;
-        if (!localStorage.getItem(migrationKey)) {
-          const guestProjectsRaw = localStorage.getItem("agentic_cinema_projects_v1");
-          if (guestProjectsRaw) {
-            try {
-              const guestProjects = JSON.parse(guestProjectsRaw);
-              if (Array.isArray(guestProjects)) {
-                const customGuestProjects = guestProjects
-                  .filter((p: ProjectData) => p.isCustom)
-                  .map((p: ProjectData) => ({ ...p, userId }));
-
-                if (customGuestProjects.length > 0) {
-                  const userKey = `agentic_cinema_projects_u_${userId}`;
-                  const existingUserRaw = localStorage.getItem(userKey);
-                  const existingUserProjects = existingUserRaw ? JSON.parse(existingUserRaw) : [];
-                  const existingIds = new Set((existingUserProjects || []).map((p: any) => p.id));
-                  const merged = [
-                    ...(existingUserProjects || []),
-                    ...customGuestProjects.filter((p) => !existingIds.has(p.id)),
-                  ];
-                  localStorage.setItem(userKey, JSON.stringify(merged));
-                }
-              }
-            } catch (e) {
-              console.warn("[ProjectStore] Error migrating guest projects:", e);
-            }
-          }
-          localStorage.setItem(migrationKey, "true");
-        }
-      } catch {}
-    } else {
-      try {
-        localStorage.removeItem("agentic_cinema_active_uid");
-        localStorage.removeItem("agentic_cinema_active_token");
-      } catch {}
-    }
     window.dispatchEvent(new CustomEvent("agentic_cinema_auth_changed", { detail: { userId } }));
+    // Hydrate on first sign-in. A token refresh re-enters here with the same
+    // account and a warm cache, which must not trigger a redundant refetch.
+    if (userId && token && !projectsCache) {
+      void hydrateStore();
+    }
   }
 }
 
-/**
- * Returns the active user ID from memory or local cache.
- */
+/** In-memory only — there is no persisted fallback by design. */
 export function getActiveUserId(): string | null {
-  if (activeUserId) return activeUserId;
-  if (typeof window !== "undefined") {
-    try {
-      const stored = localStorage.getItem("agentic_cinema_active_uid");
-      if (stored) {
-        activeUserId = stored;
-        return stored;
-      }
-    } catch {}
-  }
-  return null;
+  return activeUserId;
 }
 
-/**
- * Returns the active Supabase Bearer token if available.
- */
+/** In-memory only — there is no persisted fallback by design. */
 export function getActiveAuthToken(): string | null {
-  if (activeAuthToken) return activeAuthToken;
-  if (typeof window !== "undefined") {
-    try {
-      const stored = localStorage.getItem("agentic_cinema_active_token");
-      if (stored) {
-        activeAuthToken = stored;
-        return stored;
-      }
-    } catch {}
-  }
-  return null;
+  return activeAuthToken;
 }
 
-/**
- * Returns HTTP headers with the Bearer authorization token if user is signed in.
- */
 export function getAuthHeaders(): Record<string, string> {
   const token = getActiveAuthToken();
-  if (token) {
-    return { Authorization: `Bearer ${token}` };
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function authHeaders(json = false): Record<string, string> {
+  return json
+    ? { "Content-Type": "application/json", ...getAuthHeaders() }
+    : { ...getAuthHeaders() };
+}
+
+async function fetchCollection<T>(
+  path: string,
+  key: string,
+  label: string
+): Promise<T[] | null> {
+  const res = await fetch(path, { headers: authHeaders(), cache: "no-store" });
+  if (!res.ok) {
+    console.warn(`[ProjectStore] ${label} fetch failed (${res.status})`);
+    return null;
   }
-  return {};
-}
-
-export function getProjectsStorageKey(userId?: string | null): string {
-  const uid = userId !== undefined ? userId : getActiveUserId();
-  return uid ? `agentic_cinema_projects_u_${uid}` : "agentic_cinema_projects_v1";
-}
-
-export function getTalentVaultStorageKey(userId?: string | null): string {
-  const uid = userId !== undefined ? userId : getActiveUserId();
-  return uid ? `agentic_cinema_talent_vault_u_${uid}` : "agentic_cinema_talent_vault_v1";
-}
-
-export function getScratchpadStorageKey(userId?: string | null): string {
-  const uid = userId !== undefined ? userId : getActiveUserId();
-  return uid ? `agentic_cinema_scratchpad_u_${uid}` : "agentic_cinema_scratchpad_v1";
-}
-
-export function getOnboardingStorageKey(userId?: string | null): string {
-  const uid = userId !== undefined ? userId : getActiveUserId();
-  return uid ? `agentic_cinema_onboarding_seen_u_${uid}` : "agentic_cinema_onboarding_seen_v1";
+  const data = await res.json();
+  return Array.isArray(data?.[key]) ? (data[key] as T[]) : null;
 }
 
 /**
- * Ensures a project has its `scenes` array and `activeSceneId` set.
- * If missing, falls back to seed preset or wraps single scene.
+ * Pulls projects, talent vault and scratchpad notes from Supabase into the
+ * in-memory caches. Concurrent calls share one in-flight request; a sign-out
+ * mid-flight discards the result rather than repopulating a dead session.
  */
-export function ensureProjectScenes(project: ProjectData): ProjectData {
-  const isAethelgardMatch =
-    !project.isCustom &&
-    (project.id === "aethelgard-chronos-shift" ||
-      project.id === "project-mttg5hn2" ||
-      project.id === "vault-heist-demo" ||
-      project.title?.toLowerCase().includes("aethelgard"));
+export function hydrateStore(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (!activeUserId || !activeAuthToken) return Promise.resolve();
+  if (hydrationPromise) return hydrationPromise;
 
-  const seed = SEED_PROJECTS[0];
+  const requestedUserId = activeUserId;
 
-  if (isAethelgardMatch && seed) {
-    // 1. Fully hydrate characters with portrait and fullBodyImageUrl
-    if (seed.characters && seed.characters.length > 0) {
-      project.characters = seed.characters;
-    }
+  hydrationPromise = (async () => {
+    try {
+      const [projects, talent, notes] = await Promise.all([
+        fetchCollection<ProjectData>("/api/projects", "projects", "projects"),
+        fetchCollection<ProjectCharacter>("/api/talent", "talent", "talent vault"),
+        fetchCollection<ScratchpadNote>("/api/notes", "notes", "scratchpad"),
+      ]);
 
-    // 2. Merge scenes: use seed as base structure but preserve user-generated content
-    if (seed.scenes && seed.scenes.length > 0) {
-      if (!project.scenes || project.scenes.length === 0) {
-        // First load — seed everything
-        project.scenes = seed.scenes;
-        project.activeSceneId = seed.activeSceneId || seed.scenes[0].id;
-      } else {
-        // Subsequent loads — merge per scene ID, preserving user data
-        const storedById = new Map(project.scenes.map((s) => [s.id, s]));
-        const mergedSeedScenes = seed.scenes.map((seedScene) => {
-          const stored = storedById.get(seedScene.id);
-          if (!stored) return seedScene;
-          // Seed provides structural/metadata fields; stored provides user-generated content
-          return {
-            ...seedScene,
-            // Preserve user-generated mutable fields
-            sceneImages: stored.sceneImages?.length ? stored.sceneImages : seedScene.sceneImages,
-            selectedLocationCandidateId: stored.selectedLocationCandidateId ?? seedScene.selectedLocationCandidateId,
-            locationCandidates: stored.locationCandidates?.length ? stored.locationCandidates : seedScene.locationCandidates,
-            timelineMoments: stored.timelineMoments?.length ? stored.timelineMoments : seedScene.timelineMoments,
-            shots: stored.shots?.length ? stored.shots : seedScene.shots,
-            scoreTakes: stored.scoreTakes?.length ? stored.scoreTakes : seedScene.scoreTakes,
-            activeScoreUrl: stored.activeScoreUrl ?? seedScene.activeScoreUrl,
-            videoTakes: stored.videoTakes?.length ? stored.videoTakes : seedScene.videoTakes,
-            activeVideoUrl: stored.activeVideoUrl ?? seedScene.activeVideoUrl,
-            nodes: stored.nodes?.length ? stored.nodes : seedScene.nodes,
-            edges: stored.edges?.length ? stored.edges : seedScene.edges,
-          };
-        });
-        // Retain any user-added scenes that don't exist in seed
-        const userAddedScenes = project.scenes.filter(
-          (s) => !seed.scenes?.some((seedScene) => seedScene.id === s.id)
-        );
-        project.scenes = [...mergedSeedScenes, ...userAddedScenes];
+      // The session may have ended or switched while these were in flight.
+      if (activeUserId !== requestedUserId) return;
 
-        if (!project.activeSceneId || !project.scenes.some((s) => s.id === project.activeSceneId)) {
-          project.activeSceneId = seed.activeSceneId || seed.scenes[0].id;
-        }
+      projectsCache = (projects ?? []).map(ensureProjectScenes);
+      talentVaultCache = talent ?? [];
+      scratchpadCache = notes ?? [];
+    } catch (err) {
+      console.warn("[ProjectStore] Cloud hydration failed:", err);
+    } finally {
+      hydrationPromise = null;
+      if (typeof window !== "undefined" && activeUserId === requestedUserId) {
+        window.dispatchEvent(new CustomEvent("agentic_cinema_store_hydrated"));
       }
     }
+  })();
 
-    // 3. Hydrate video/audio takes — only if user hasn't added their own
-    if (seed.videoTakes && seed.videoTakes.length > 0 && (!project.videoTakes || project.videoTakes.length === 0)) {
-      project.videoTakes = seed.videoTakes;
+  return hydrationPromise;
+}
+
+/** Wipes any legacy browser-persisted app data left by earlier versions. */
+export function purgeLegacyLocalData(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("agentic_cinema_")) doomed.push(key);
     }
-    if (seed.scoreTakes && seed.scoreTakes.length > 0 && (!project.scoreTakes || project.scoreTakes.length === 0)) {
-      project.scoreTakes = seed.scoreTakes;
+    for (const key of doomed) localStorage.removeItem(key);
+    for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith("cinema_vcs_")) sessionStorage.removeItem(key);
     }
-    project.activeVideoUrl = project.activeVideoUrl || seed.activeVideoUrl;
-    project.activeScoreUrl = project.activeScoreUrl || seed.activeScoreUrl;
-    project.storyboardFrameUrl = project.storyboardFrameUrl || seed.storyboardFrameUrl;
-    project.floorPlanMapUrl = project.floorPlanMapUrl || seed.floorPlanMapUrl;
-    project.floorPlanMapName = project.floorPlanMapName || seed.floorPlanMapName;
-    if (seed.locationClusters && seed.locationClusters.length > 0 && (!project.locationClusters || project.locationClusters.length === 0)) {
-      project.locationClusters = seed.locationClusters;
-    }
-    return project;
+  } catch (err) {
+    console.warn("[ProjectStore] Could not purge legacy local data:", err);
   }
+}
 
+/**
+ * Ensures a project has a `scenes` array and that `activeSceneId` points at a
+ * real scene. There is no seed/preset fallback any more: a project's scenes
+ * come from its own stored data or from a single auto-wrapped scene.
+ */
+export function ensureProjectScenes(project: ProjectData): ProjectData {
   if (project.scenes && project.scenes.length > 0) {
     if (!project.activeSceneId || !project.scenes.some((s) => s.id === project.activeSceneId)) {
       project.activeSceneId = project.scenes[0].id;
@@ -918,15 +879,7 @@ export function ensureProjectScenes(project: ProjectData): ProjectData {
     return project;
   }
 
-  // Check if seed project has rich multi-scenes
-  const matchedSeed = SEED_PROJECTS.find((p) => p.id === project.id);
-  if (matchedSeed?.scenes && matchedSeed.scenes.length > 0) {
-    project.scenes = matchedSeed.scenes;
-    project.activeSceneId = matchedSeed.activeSceneId || matchedSeed.scenes[0].id;
-    return project;
-  }
-
-  // Auto-wrap legacy single-scene into an array
+  // Auto-wrap a legacy single-scene project into the scenes array.
   const defaultScene: FilmScene = {
     id: `${project.id}-sc-01`,
     sceneNumber: 1,
@@ -936,7 +889,7 @@ export function ensureProjectScenes(project: ProjectData): ProjectData {
     startSeconds: project.scenePlacementSeconds ?? 1800,
     durationSeconds: project.sceneDurationSeconds ?? 180,
     location: project.primaryLocation || "Primary Stage",
-    castPresent: project.characters.map((c) => c.name),
+    castPresent: (project.characters || []).map((c) => c.name),
     screenplayText: project.screenplayText || "",
     directorStyle: project.directorStyle,
     coreSecret: project.coreSecret,
@@ -954,322 +907,105 @@ export function ensureProjectScenes(project: ProjectData): ProjectData {
 }
 
 /**
- * Explicitly populates the demo productions (SEED_PROJECTS) into the active account.
- * Used when a user explicitly requests to explore demo productions.
- */
-export function seedDemoProjects(): ProjectData[] {
-  if (typeof window === "undefined") return SEED_PROJECTS.map(ensureProjectScenes);
-  const key = getProjectsStorageKey();
-  const all = getAllProjects();
-  const existingIds = new Set(all.map((p) => p.id));
-  const newSeeds = SEED_PROJECTS.filter((s) => !existingIds.has(s.id));
-  const merged = [...all, ...newSeeds];
-  try {
-    localStorage.setItem(key, JSON.stringify(merged));
-  } catch (err) {
-    console.error("Failed to seed demo projects:", err);
-  }
-  return merged.map(ensureProjectScenes);
-}
-
-/**
- * Loads all projects from localStorage for the active account.
- * For authenticated accounts, does not auto-seed demo projects so the real empty state is reachable.
- * For first-time anonymous visitors, seeds the demo projects once to permit exploratory preview.
+ * All projects for the active account, from the in-memory cloud cache.
+ * Returns an empty list until `hydrateStore()` has completed — callers that
+ * need to distinguish "loading" from "empty" should check `isStoreHydrated()`.
  */
 export function getAllProjects(): ProjectData[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const uid = getActiveUserId();
-    const key = getProjectsStorageKey(uid);
-    const raw = localStorage.getItem(key);
-
-    // If key hasn't been initialized yet
-    if (raw === null) {
-      if (!uid) {
-        // First-time guest visitor: seed once for exploratory demo
-        const hasInitializedGuest = localStorage.getItem("agentic_cinema_guest_seeded_v1");
-        if (!hasInitializedGuest) {
-          localStorage.setItem("agentic_cinema_guest_seeded_v1", "true");
-          localStorage.setItem(key, JSON.stringify(SEED_PROJECTS));
-          return SEED_PROJECTS.map(ensureProjectScenes);
-        }
-      }
-      // For authenticated users or returning guests who cleared projects, return empty list
-      localStorage.setItem(key, JSON.stringify([]));
-      return [];
-    }
-
-    const parsed = JSON.parse(raw) as ProjectData[];
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      return [];
-    }
-
-    // Auto-update only known demo projects with enriched seed data if missing images.
-    // NEVER touch user custom projects — keyed strictly by known demo IDs.
-    const DEMO_PROJECT_IDS = new Set([
-      "aethelgard-chronos-shift",
-      "project-mttg5hn2",
-      "vault-heist-demo",
-    ]);
-
-    let needsResave = false;
-    const updated = parsed.map((p) => {
-      // Only auto-upgrade if it's a known demo project ID and NOT a custom user project
-      const isKnownDemo = DEMO_PROJECT_IDS.has(p.id) ||
-        (p.title?.toLowerCase().includes("aethelgard") && !p.isCustom);
-
-      if (isKnownDemo && !p.isCustom) {
-        const seed = SEED_PROJECTS[0];
-        if (seed) {
-          const firstCandHasImg = p.scenes?.[0]?.locationCandidates?.[0]?.preview_image_url;
-          const charHasFullImg = p.characters?.[0]?.fullBodyImageUrl;
-          const hasLegacyRef =
-            JSON.stringify(p).includes("ai_vault_plate") ||
-            JSON.stringify(p).includes("deep-space-airlock");
-
-          if (!firstCandHasImg || !charHasFullImg || hasLegacyRef) {
-            needsResave = true;
-            return {
-              ...seed,
-              id: p.id === "project-mttg5hn2" ? "project-mttg5hn2" : seed.id,
-              userId: p.userId,
-            };
-          }
-        }
-      }
-      return p;
-    });
-    if (needsResave) {
-      try {
-        localStorage.setItem(key, JSON.stringify(updated));
-      } catch {}
-    }
-    return updated.map(ensureProjectScenes);
-  } catch (err) {
-    console.error("Failed to load projects from localStorage:", err);
-    return [];
-  }
+  return projectsCache ?? [];
 }
 
 /**
- * Gets a specific project by ID.
+ * Looks a project up in the in-memory cache. With seed presets gone, an
+ * unknown id is genuinely unknown — there is no fabricated fallback project.
  */
 export function getProjectById(id: string): ProjectData | null {
-  const all = getAllProjects();
-  const found = all.find((p) => p.id === id);
-  if (found) return ensureProjectScenes(found);
-  const seed = SEED_PROJECTS.find((p) => p.id === id);
-  if (seed) return ensureProjectScenes(seed);
-  // If requesting legacy benchmark demo URLs or original project ID, resolve to the Aethelgard demo project
-  if (id === "vault-heist-demo" || id === "project-mttg5hn2") {
-    const demo = SEED_PROJECTS[0];
-    if (demo) return ensureProjectScenes({ ...demo, id });
-  }
-  return null;
+  const found = (projectsCache ?? []).find((p) => p.id === id);
+  return found ? ensureProjectScenes(found) : null;
 }
 
 /**
- * Saves or updates a project in localStorage (scoped to the account) and syncs with Supabase.
- * Warns if localStorage quota is exceeded so data is not silently lost.
+ * Applies a project to the in-memory cache and mirrors it to Supabase.
+ *
+ * The cache is updated first so the UI reflects the change immediately; the
+ * cloud write is the durable one. Returns false when there is no session —
+ * the app is login-gated, so that only happens if one expired mid-edit.
  */
 export function saveProject(project: ProjectData): boolean {
   if (typeof window === "undefined") return false;
-  try {
-    const key = getProjectsStorageKey();
-    const all = getAllProjects();
-    const index = all.findIndex((p) => p.id === project.id);
-    const uid = getActiveUserId();
-    const updatedProject: ProjectData = {
-      ...project,
-      userId: project.userId || uid || undefined,
-      updatedAt: Date.now(),
-    };
-    if (index >= 0) {
-      all[index] = updatedProject;
-    } else {
-      all.unshift(updatedProject);
-    }
 
-    try {
-      localStorage.setItem(key, JSON.stringify(all));
-    } catch (storageErr: any) {
-      if (
-        storageErr?.name === "QuotaExceededError" ||
-        storageErr?.code === 22 ||
-        storageErr?.name === "NS_ERROR_DOM_QUOTA_REACHED"
-      ) {
-        console.warn("[ProjectStore] LocalStorage quota exceeded. Dispatching storage quota event.");
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("agentic_cinema_quota_exceeded", {
-              detail: {
-                message: "Local browser storage is full. Sign in or export takes to sync with cloud storage.",
-              },
-            })
-          );
-        }
-      }
-      return false;
-    }
-
-    // Asynchronously sync with Supabase only if user is authenticated
-    if (uid && getActiveAuthToken()) {
-      fetch("/api/projects", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify(updatedProject),
-      }).catch((err) => {
-        console.warn("[ProjectStore] Background Supabase project sync warning:", err);
-      });
-    }
-    return true;
-  } catch (err) {
-    console.error("Failed to save project:", err);
+  const uid = getActiveUserId();
+  if (!uid || !getActiveAuthToken()) {
+    console.warn("[ProjectStore] saveProject ignored: no authenticated session.");
     return false;
   }
+
+  const updatedProject: ProjectData = {
+    ...project,
+    userId: project.userId || uid,
+    updatedAt: Date.now(),
+  };
+
+  const current = projectsCache ?? [];
+  const index = current.findIndex((p) => p.id === updatedProject.id);
+  projectsCache =
+    index >= 0
+      ? current.map((p, i) => (i === index ? updatedProject : p))
+      : [updatedProject, ...current];
+
+  fetch("/api/projects", {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify(updatedProject),
+  }).catch((err) => {
+    console.warn("[ProjectStore] Project cloud sync warning:", err);
+  });
+
+  return true;
 }
 
 /**
- * Synchronizes local projects with Supabase for the authenticated account.
- * Merges projects by ID, keeping the latest updatedAt version.
+ * Re-reads the account's projects from Supabase into the cache and returns them.
  */
 export async function syncProjectsWithSupabase(): Promise<ProjectData[]> {
   if (typeof window === "undefined") return getAllProjects();
-  try {
-    const res = await fetch("/api/projects", {
-      headers: {
-        ...getAuthHeaders(),
-      },
-    });
-    if (!res.ok) return getAllProjects();
-    const data = await res.json();
-    if (!data || !Array.isArray(data.projects)) {
-      return getAllProjects();
-    }
+  if (!getActiveAuthToken()) return getAllProjects();
 
-    const key = getProjectsStorageKey();
-    const localProjects = getAllProjects();
-    const mergedMap = new Map<string, ProjectData>();
+  const remote = await fetchCollection<ProjectData>("/api/projects", "projects", "projects");
+  if (remote === null) return getAllProjects();
 
-    for (const p of localProjects) {
-      mergedMap.set(p.id, p);
-    }
-
-    for (const remote of data.projects) {
-      const local = mergedMap.get(remote.id);
-      if (!local) {
-        mergedMap.set(remote.id, ensureProjectScenes(remote));
-      } else {
-        // Intelligent bidirectional merge:
-        // Never discard local scenes if remote is missing scenes (or vice-versa).
-        const localHasScenes = Array.isArray(local.scenes) && local.scenes.length > 0;
-        const remoteHasScenes = Array.isArray(remote.scenes) && remote.scenes.length > 0;
-
-        let resolvedScenes: FilmScene[];
-        if (localHasScenes && !remoteHasScenes) {
-          resolvedScenes = local.scenes!;
-        } else if (!localHasScenes && remoteHasScenes) {
-          resolvedScenes = remote.scenes!;
-        } else if (localHasScenes && remoteHasScenes && local.scenes && remote.scenes) {
-          const localById = new Map(local.scenes.map((s) => [s.id, s]));
-          resolvedScenes = remote.scenes.map((remSc: FilmScene) => {
-            const locSc = localById.get(remSc.id);
-            if (!locSc) return remSc;
-            return {
-              ...remSc,
-              sceneImages: remSc.sceneImages?.length ? remSc.sceneImages : locSc.sceneImages,
-              selectedLocationCandidateId: remSc.selectedLocationCandidateId ?? locSc.selectedLocationCandidateId,
-              locationCandidates: remSc.locationCandidates?.length ? remSc.locationCandidates : locSc.locationCandidates,
-              timelineMoments: remSc.timelineMoments?.length ? remSc.timelineMoments : locSc.timelineMoments,
-              shots: remSc.shots?.length ? remSc.shots : locSc.shots,
-              scoreTakes: remSc.scoreTakes?.length ? remSc.scoreTakes : locSc.scoreTakes,
-              activeScoreUrl: remSc.activeScoreUrl ?? locSc.activeScoreUrl,
-              videoTakes: remSc.videoTakes?.length ? remSc.videoTakes : locSc.videoTakes,
-              activeVideoUrl: remSc.activeVideoUrl ?? locSc.activeVideoUrl,
-            };
-          });
-          // Preserve any local scenes that weren't in remote
-          for (const locSc of local.scenes) {
-            if (!resolvedScenes.some((s) => s.id === locSc.id)) {
-              resolvedScenes.push(locSc);
-            }
-          }
-        } else {
-          resolvedScenes = [];
-        }
-
-        const merged: ProjectData = {
-          ...local,
-          ...remote,
-          scenes: resolvedScenes.length > 0 ? resolvedScenes : (local.scenes || remote.scenes),
-          activeSceneId: remote.activeSceneId || local.activeSceneId,
-          activeVideoUrl: remote.activeVideoUrl || local.activeVideoUrl,
-          videoTakes: remote.videoTakes?.length ? remote.videoTakes : (local.videoTakes || []),
-          scoreTakes: remote.scoreTakes?.length ? remote.scoreTakes : (local.scoreTakes || []),
-          storyboardFrameUrl: remote.storyboardFrameUrl || local.storyboardFrameUrl,
-          floorPlanMapUrl: remote.floorPlanMapUrl || local.floorPlanMapUrl,
-          floorPlanMapName: remote.floorPlanMapName || local.floorPlanMapName,
-          floorPlanMapConfig: remote.floorPlanMapConfig || local.floorPlanMapConfig,
-          locationClusters: remote.locationClusters?.length ? remote.locationClusters : local.locationClusters,
-        };
-        mergedMap.set(remote.id, ensureProjectScenes(merged));
-      }
-    }
-
-    const finalProjects = Array.from(mergedMap.values());
-    localStorage.setItem(key, JSON.stringify(finalProjects));
-    return finalProjects;
-  } catch (err) {
-    console.warn("[ProjectStore] syncProjectsWithSupabase error:", err);
-    return getAllProjects();
+  projectsCache = remote.map(ensureProjectScenes);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("agentic_cinema_store_hydrated"));
   }
+  return projectsCache;
 }
 
 /**
  * Toggles starred status for a project.
  */
 export function toggleStarProject(id: string): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const all = getAllProjects();
-    const project = all.find((p) => p.id === id);
-    if (!project) return false;
-    project.isStarred = !project.isStarred;
-    saveProject(project);
-    return project.isStarred;
-  } catch (err) {
-    console.error("Failed to toggle star:", err);
-    return false;
-  }
+  const project = (projectsCache ?? []).find((p) => p.id === id);
+  if (!project) return false;
+  project.isStarred = !project.isStarred;
+  saveProject(project);
+  return Boolean(project.isStarred);
 }
 
 /**
- * Deletes a project from localStorage and syncs with Supabase.
+ * Removes a project from the cache and deletes it from Supabase.
  */
 export function deleteProject(id: string): void {
   if (typeof window === "undefined") return;
-  try {
-    const key = getProjectsStorageKey();
-    const all = getAllProjects();
-    const filtered = all.filter((p) => p.id !== id);
-    localStorage.setItem(key, JSON.stringify(filtered));
 
-    // Asynchronously delete from Supabase with authorization
-    fetch(`/api/projects/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      headers: {
-        ...getAuthHeaders(),
-      },
-    }).catch((err) => {
-      console.warn("[ProjectStore] Background Supabase project delete warning:", err);
-    });
-  } catch (err) {
-    console.error("Failed to delete project:", err);
-  }
+  projectsCache = (projectsCache ?? []).filter((p) => p.id !== id);
+
+  fetch(`/api/projects/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  }).catch((err) => {
+    console.warn("[ProjectStore] Project cloud delete warning:", err);
+  });
 }
 
 
@@ -1540,8 +1276,9 @@ export interface CreateProjectOptions {
 }
 
 /**
- * Creates a new blank/pending project entry in localStorage with optional custom characters,
- * director styling, narrative format, and target timeframe parameters.
+ * Creates a new blank/pending project entry and persists it to the cloud, with
+ * optional custom characters, director styling, narrative format, and target
+ * timeframe parameters.
  */
 export function createNewProjectEntry(data: CreateProjectOptions): ProjectData {
   const newPid = data.id || `project-${Date.now().toString(36)}`;
@@ -1720,223 +1457,141 @@ export function updateProjectTimeframe(
   return updated;
 }
 
-const TALENT_VAULT_KEY = "agentic_cinema_talent_vault_v1";
-const SCRATCHPAD_KEY = "agentic_cinema_scratchpad_v1";
-
 /**
- * Loads all saved talent profiles from the persistent Talent Vault for the active account.
+ * All saved talent profiles for the active account, from the in-memory cache.
  */
 export function getTalentVault(): ProjectCharacter[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const key = getTalentVaultStorageKey();
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error("Failed to load talent vault:", err);
-    return [];
-  }
+  return talentVaultCache ?? [];
 }
 
 /**
- * Saves a character profile to the reusable studio Talent Vault and syncs to Supabase.
+ * Saves a character profile to the reusable studio Talent Vault and mirrors it
+ * to Supabase. The cache is updated first so the vault renders immediately.
  */
 export function saveToTalentVault(character: ProjectCharacter): void {
   if (typeof window === "undefined") return;
-  try {
-    const key = getTalentVaultStorageKey();
-    const vault = getTalentVault();
-    const existingIdx = vault.findIndex(
-      (c) => c.name.toLowerCase() === character.name.toLowerCase()
-    );
-    if (existingIdx >= 0) {
-      vault[existingIdx] = character;
-    } else {
-      vault.unshift(character);
-    }
-    localStorage.setItem(key, JSON.stringify(vault));
 
-    // Asynchronously sync with Supabase
-    fetch("/api/talent", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...getAuthHeaders(),
-      },
-      body: JSON.stringify(character),
-    }).catch(() => {});
-  } catch (err) {
-    console.error("Failed to save to talent vault:", err);
-  }
+  const vault = talentVaultCache ?? [];
+  const existingIdx = vault.findIndex(
+    (c) => c.name.toLowerCase() === character.name.toLowerCase()
+  );
+  talentVaultCache =
+    existingIdx >= 0
+      ? vault.map((c, i) => (i === existingIdx ? character : c))
+      : [character, ...vault];
+
+  if (!getActiveAuthToken()) return;
+  fetch("/api/talent", {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify(character),
+  }).catch((err) => {
+    console.warn("[ProjectStore] Talent vault cloud sync warning:", err);
+  });
 }
 
 /**
- * Removes a character from the studio Talent Vault and Supabase.
+ * Removes a character from the studio Talent Vault and from Supabase.
  */
 export function deleteFromTalentVault(characterName: string): void {
   if (typeof window === "undefined") return;
-  try {
-    const key = getTalentVaultStorageKey();
-    const vault = getTalentVault().filter(
-      (c) => c.name.toLowerCase() !== characterName.toLowerCase()
-    );
-    localStorage.setItem(key, JSON.stringify(vault));
 
-    // Asynchronously delete from Supabase
-    fetch(`/api/talent?name=${encodeURIComponent(characterName)}`, {
-      method: "DELETE",
-      headers: {
-        ...getAuthHeaders(),
-      },
-    }).catch(() => {});
-  } catch (err) {
-    console.error("Failed to delete from talent vault:", err);
-  }
+  talentVaultCache = (talentVaultCache ?? []).filter(
+    (c) => c.name.toLowerCase() !== characterName.toLowerCase()
+  );
+
+  if (!getActiveAuthToken()) return;
+  fetch(`/api/talent?name=${encodeURIComponent(characterName)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  }).catch((err) => {
+    console.warn("[ProjectStore] Talent vault cloud delete warning:", err);
+  });
 }
 
 /**
- * Synchronizes talent vault with Supabase.
+ * Re-reads the talent vault from Supabase into the cache and returns it.
  */
 export async function syncTalentVaultWithSupabase(): Promise<ProjectCharacter[]> {
   if (typeof window === "undefined") return getTalentVault();
-  try {
-    const res = await fetch("/api/talent", {
-      headers: {
-        ...getAuthHeaders(),
-      },
-    });
-    if (!res.ok) return getTalentVault();
-    const data = await res.json();
-    if (!data || !Array.isArray(data.talent)) {
-      return getTalentVault();
-    }
+  if (!getActiveAuthToken()) return getTalentVault();
 
-    const key = getTalentVaultStorageKey();
-    const localTalent = getTalentVault();
-    const map = new Map<string, ProjectCharacter>();
-    for (const c of localTalent) map.set(c.name.toLowerCase(), c);
-    for (const remote of data.talent) {
-      map.set(remote.name.toLowerCase(), remote);
-    }
-    const finalTalent = Array.from(map.values());
-    localStorage.setItem(key, JSON.stringify(finalTalent));
-    return finalTalent;
-  } catch (err) {
-    console.warn("[ProjectStore] syncTalentVaultWithSupabase error:", err);
-    return getTalentVault();
-  }
+  const remote = await fetchCollection<ProjectCharacter>("/api/talent", "talent", "talent vault");
+  if (remote === null) return getTalentVault();
+
+  talentVaultCache = remote;
+  return remote;
 }
 
 /**
- * Loads scratchpad notes for a given project or studio-wide for the active account.
+ * Scratchpad notes for a project (or all notes) from the in-memory cache.
  */
 export function getScratchpadNotes(projectId?: string): ScratchpadNote[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const key = getScratchpadStorageKey();
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const notes: ScratchpadNote[] = JSON.parse(raw);
-    if (projectId) {
-      return notes.filter((n) => !n.projectId || n.projectId === projectId);
-    }
-    return notes;
-  } catch (err) {
-    console.error("Failed to load scratchpad notes:", err);
-    return [];
+  const notes = scratchpadCache ?? [];
+  if (projectId) {
+    return notes.filter((n) => !n.projectId || n.projectId === projectId);
   }
+  return notes;
 }
 
 /**
- * Saves or updates a scratchpad note with background Supabase sync.
+ * Saves or updates a scratchpad note, mirroring it to Supabase.
  */
 export function saveScratchpadNote(note: ScratchpadNote): void {
   if (typeof window === "undefined") return;
-  try {
-    const key = getScratchpadStorageKey();
-    const notes = getScratchpadNotes();
-    const uid = getActiveUserId();
-    const noteWithUser: ScratchpadNote = {
-      ...note,
-      userId: note.userId || uid || undefined,
-    };
-    const idx = notes.findIndex((n) => n.id === note.id);
-    if (idx >= 0) {
-      notes[idx] = noteWithUser;
-    } else {
-      notes.unshift(noteWithUser);
-    }
-    localStorage.setItem(key, JSON.stringify(notes));
 
-    // Asynchronously sync with Supabase
-    fetch("/api/notes", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...getAuthHeaders(),
-      },
-      body: JSON.stringify(noteWithUser),
-    }).catch(() => {});
-  } catch (err) {
-    console.error("Failed to save scratchpad note:", err);
-  }
+  const uid = getActiveUserId();
+  const noteWithUser: ScratchpadNote = {
+    ...note,
+    userId: note.userId || uid || undefined,
+  };
+
+  const notes = scratchpadCache ?? [];
+  const idx = notes.findIndex((n) => n.id === note.id);
+  scratchpadCache =
+    idx >= 0
+      ? notes.map((n, i) => (i === idx ? noteWithUser : n))
+      : [noteWithUser, ...notes];
+
+  if (!getActiveAuthToken()) return;
+  fetch("/api/notes", {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify(noteWithUser),
+  }).catch((err) => {
+    console.warn("[ProjectStore] Scratchpad cloud sync warning:", err);
+  });
 }
 
 /**
- * Synchronizes scratchpad notes with Supabase.
+ * Re-reads scratchpad notes from Supabase into the cache and returns them.
  */
 export async function syncScratchpadNotesWithSupabase(projectId?: string): Promise<ScratchpadNote[]> {
   if (typeof window === "undefined") return getScratchpadNotes(projectId);
-  try {
-    const url = projectId ? `/api/notes?projectId=${encodeURIComponent(projectId)}` : "/api/notes";
-    const res = await fetch(url, {
-      headers: {
-        ...getAuthHeaders(),
-      },
-    });
-    if (!res.ok) return getScratchpadNotes(projectId);
-    const data = await res.json();
-    if (!data || !Array.isArray(data.notes)) {
-      return getScratchpadNotes(projectId);
-    }
+  if (!getActiveAuthToken()) return getScratchpadNotes(projectId);
 
-    const key = getScratchpadStorageKey();
-    const localNotes = getScratchpadNotes();
-    const map = new Map<string, ScratchpadNote>();
-    for (const n of localNotes) map.set(n.id, n);
-    for (const remote of data.notes) {
-      map.set(remote.id, remote);
-    }
-    const finalNotes = Array.from(map.values());
-    localStorage.setItem(key, JSON.stringify(finalNotes));
-    return projectId ? finalNotes.filter((n) => !n.projectId || n.projectId === projectId) : finalNotes;
-  } catch (err) {
-    console.warn("[ProjectStore] syncScratchpadNotesWithSupabase error:", err);
-    return getScratchpadNotes(projectId);
-  }
+  const remote = await fetchCollection<ScratchpadNote>("/api/notes", "notes", "scratchpad");
+  if (remote === null) return getScratchpadNotes(projectId);
+
+  scratchpadCache = remote;
+  return getScratchpadNotes(projectId);
 }
 
 /**
- * Deletes a scratchpad note by ID with background Supabase sync.
+ * Deletes a scratchpad note by ID and from Supabase.
  */
 export function deleteScratchpadNote(id: string): void {
   if (typeof window === "undefined") return;
-  try {
-    const key = getScratchpadStorageKey();
-    const notes = getScratchpadNotes().filter((n) => n.id !== id);
-    localStorage.setItem(key, JSON.stringify(notes));
 
-    // Asynchronously delete from Supabase
-    fetch(`/api/notes?id=${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      headers: {
-        ...getAuthHeaders(),
-      },
-    }).catch(() => {});
-  } catch (err) {
-    console.error("Failed to delete scratchpad note:", err);
-  }
+  scratchpadCache = (scratchpadCache ?? []).filter((n) => n.id !== id);
+
+  if (!getActiveAuthToken()) return;
+  fetch(`/api/notes?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  }).catch((err) => {
+    console.warn("[ProjectStore] Scratchpad cloud delete warning:", err);
+  });
 }
 
 
@@ -2421,10 +2076,10 @@ export function buildProjectNodesAndEdges(
     { name: "Character A", archetype: "Protagonist" },
     { name: "Character B", archetype: "Antagonist" },
   ];
-  const chars =
+  const chars: ProjectCharacter[] =
     project.characters && project.characters.length > 0
       ? project.characters
-      : SEED_PROJECTS[0]?.characters || fallbackCharacters;
+      : fallbackCharacters;
   const mainCharA = chars[0];
   const mainCharB = chars[1] || chars[0];
 

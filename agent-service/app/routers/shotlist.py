@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -116,64 +115,64 @@ def _fallback_shotlist(req: ShotlistRequest) -> ShotlistResponse:
     )
 
     template_shots = [
-        dict(
-            shot_type="Wide Establishing Master",
-            lens="24mm Anamorphic Prime",
-            angle="Eye-Level Center Axis",
-            camera_movement=req.camera_motion or "Slow creeping track forward (2mm/sec)",
-            blocking_notes=f"{charB} stands dead center facing the vault steel door. {charA} enters frame left at 00:03, stopping at terminal perimeter.",
-            lighting_setup="Overhead flickering 4300K cyan tube fixture; deep silhouettes on periphery.",
-            dramatic_intent=f"Establish spatial claustrophobia and the power asymmetry between {charB} and {charA}.",
-            imagen_prompt=f"Cinematic wide establishing shot in bank vault. Cold cyan lighting, two silhouetted figures {charA} and {charB} facing a massive bank vault safe door. 35mm anamorphic scope, film grain.",
-            blocking_start=f"{charB} centered facing vault door, {charA} off-frame left",
-            blocking_end=f"{charB} still centered, {charA} entering frame left edge",
-            conditioning_source="location_ref" if has_location_ref else (
+        {
+            "shot_type": "Wide Establishing Master",
+            "lens": "24mm Anamorphic Prime",
+            "angle": "Eye-Level Center Axis",
+            "camera_movement": req.camera_motion or "Slow creeping track forward (2mm/sec)",
+            "blocking_notes": f"{charB} stands dead center facing the vault steel door. {charA} enters frame left at 00:03, stopping at terminal perimeter.",
+            "lighting_setup": "Overhead flickering 4300K cyan tube fixture; deep silhouettes on periphery.",
+            "dramatic_intent": f"Establish spatial claustrophobia and the power asymmetry between {charB} and {charA}.",
+            "imagen_prompt": f"Cinematic wide establishing shot in bank vault. Cold cyan lighting, two silhouetted figures {charA} and {charB} facing a massive bank vault safe door. 35mm anamorphic scope, film grain.",
+            "blocking_start": f"{charB} centered facing vault door, {charA} off-frame left",
+            "blocking_end": f"{charB} still centered, {charA} entering frame left edge",
+            "conditioning_source": "location_ref" if has_location_ref else (
                 "character_ref" if detail_by_name.get(charB, CharacterDetail(name=charB)).has_face_ref else "none"
             ),
-            conditioning_ref=charB if not has_location_ref and detail_by_name.get(charB, CharacterDetail(name=charB)).has_face_ref else "",
-        ),
-        dict(
-            shot_type="Medium Over-the-Shoulder",
-            lens="50mm T1.3 Master Prime",
-            angle="Slight Low Angle",
-            camera_movement="Locked off, rigid tripod",
-            blocking_notes=f"Looking past {charA}'s tense shoulder into {charB}'s unblinking profile as she holds the bypass key.",
-            lighting_setup="Side-lit with warm tungsten spill from the security panel contrast against cold background.",
-            dramatic_intent=f"Force audience into {charA}'s subjective vulnerability as he realizes the setup.",
-            imagen_prompt="Cinematic medium over-the-shoulder shot looking past a man's shoulder at a calculating woman holding a keycard. Moody shadow, shallow depth of field, photoreal film still.",
-            blocking_start=f"{charA} foreground left, {charB} facing camera mid-ground",
-            blocking_end=f"{charA} foreground left, {charB} raising keycard into frame",
-            conditioning_source="character_ref" if detail_by_name.get(charA, CharacterDetail(name=charA)).has_face_ref else "previous_frame",
-            conditioning_ref=charA if detail_by_name.get(charA, CharacterDetail(name=charA)).has_face_ref else "",
-        ),
-        dict(
-            shot_type="Extreme Close-Up Insert",
-            lens="85mm Macro Prime",
-            angle="Top-Down 45 deg",
-            camera_movement="Static macro lock",
-            blocking_notes=f"{charA}'s fingers trembling as he inspects the empty keycard slot on the electronic lock.",
-            lighting_setup="High-contrast specular reflection off brushed titanium safe surface.",
-            dramatic_intent="Visceral tangible evidence that escape has been compromised.",
-            imagen_prompt="Macro close up shot of trembling hand touching a brushed titanium electronic keypad in shadows. Cinematic lighting, photoreal 35mm.",
-            blocking_start=f"{charA}'s hand entering frame top",
-            blocking_end=f"{charA}'s hand resting on empty keycard slot",
-            conditioning_source="previous_frame",
-            conditioning_ref="",
-        ),
-        dict(
-            shot_type="Tight Close-Up Reaction",
-            lens="85mm Portrait Anamorphic",
-            angle="Direct Eye-Level",
-            camera_movement="Slow push-in concluding in sudden snap rack focus",
-            blocking_notes=f"{charB} turns head 15 degrees toward {charA}, expression completely devoid of remorse.",
-            lighting_setup="Edge rim light in icy cyan; eye catchlight pinpoint reflection.",
-            dramatic_intent="Confirm the emotional betrayal without words before the klaxon sounds.",
-            imagen_prompt=f"Cinematic tight close up portrait of an enigmatic woman in shadows, cold calculating eyes, subtle blue rim lighting, 35mm anamorphic film.",
-            blocking_start=f"{charB} facing away 15 degrees",
-            blocking_end=f"{charB} facing {charA} directly, holding gaze",
-            conditioning_source="previous_frame",
-            conditioning_ref="",
-        ),
+            "conditioning_ref": charB if not has_location_ref and detail_by_name.get(charB, CharacterDetail(name=charB)).has_face_ref else "",
+        },
+        {
+            "shot_type": "Medium Over-the-Shoulder",
+            "lens": "50mm T1.3 Master Prime",
+            "angle": "Slight Low Angle",
+            "camera_movement": "Locked off, rigid tripod",
+            "blocking_notes": f"Looking past {charA}'s tense shoulder into {charB}'s unblinking profile as she holds the bypass key.",
+            "lighting_setup": "Side-lit with warm tungsten spill from the security panel contrast against cold background.",
+            "dramatic_intent": f"Force audience into {charA}'s subjective vulnerability as he realizes the setup.",
+            "imagen_prompt": "Cinematic medium over-the-shoulder shot looking past a man's shoulder at a calculating woman holding a keycard. Moody shadow, shallow depth of field, photoreal film still.",
+            "blocking_start": f"{charA} foreground left, {charB} facing camera mid-ground",
+            "blocking_end": f"{charA} foreground left, {charB} raising keycard into frame",
+            "conditioning_source": "character_ref" if detail_by_name.get(charA, CharacterDetail(name=charA)).has_face_ref else "previous_frame",
+            "conditioning_ref": charA if detail_by_name.get(charA, CharacterDetail(name=charA)).has_face_ref else "",
+        },
+        {
+            "shot_type": "Extreme Close-Up Insert",
+            "lens": "85mm Macro Prime",
+            "angle": "Top-Down 45 deg",
+            "camera_movement": "Static macro lock",
+            "blocking_notes": f"{charA}'s fingers trembling as he inspects the empty keycard slot on the electronic lock.",
+            "lighting_setup": "High-contrast specular reflection off brushed titanium safe surface.",
+            "dramatic_intent": "Visceral tangible evidence that escape has been compromised.",
+            "imagen_prompt": "Macro close up shot of trembling hand touching a brushed titanium electronic keypad in shadows. Cinematic lighting, photoreal 35mm.",
+            "blocking_start": f"{charA}'s hand entering frame top",
+            "blocking_end": f"{charA}'s hand resting on empty keycard slot",
+            "conditioning_source": "previous_frame",
+            "conditioning_ref": "",
+        },
+        {
+            "shot_type": "Tight Close-Up Reaction",
+            "lens": "85mm Portrait Anamorphic",
+            "angle": "Direct Eye-Level",
+            "camera_movement": "Slow push-in concluding in sudden snap rack focus",
+            "blocking_notes": f"{charB} turns head 15 degrees toward {charA}, expression completely devoid of remorse.",
+            "lighting_setup": "Edge rim light in icy cyan; eye catchlight pinpoint reflection.",
+            "dramatic_intent": "Confirm the emotional betrayal without words before the klaxon sounds.",
+            "imagen_prompt": "Cinematic tight close up portrait of an enigmatic woman in shadows, cold calculating eyes, subtle blue rim lighting, 35mm anamorphic film.",
+            "blocking_start": f"{charB} facing away 15 degrees",
+            "blocking_end": f"{charB} facing {charA} directly, holding gaze",
+            "conditioning_source": "previous_frame",
+            "conditioning_ref": "",
+        },
     ]
 
     # Budget shots (repeating the template cycle) so the sum covers the requested
@@ -304,7 +303,7 @@ async def generate_shotlist(req: ShotlistRequest) -> ShotlistResponse:
             ),
             shots=parsed_shots,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Failed to parse Shotlist JSON from Gemini output: %s", e)
 
     return _fallback_shotlist(req)

@@ -9,6 +9,7 @@ process holds no state of its own.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import uuid
@@ -20,11 +21,18 @@ from google.genai import types
 
 from app.services.observability import AGENT_INFERENCE_DURATION_SECONDS, GEMINI_TOKENS_TOTAL
 
+logger = logging.getLogger(__name__)
+
 
 def parse_json_from_llm(text: str) -> Any:
     """Robust JSON parser for LLM outputs.
     Handles markdown fences, unescaped newlines/tabs inside string literals (strict=False),
     trailing commas, and conversational preamble/postscript text.
+
+    The attempts below are a deliberate fallback cascade: each failure just
+    means "try the next repair strategy", so they are logged at debug rather
+    than raised. The final attempt is unguarded on purpose — if nothing parses,
+    the caller needs to see the real JSONDecodeError, not a swallowed one.
     """
     cleaned = text.strip()
     if cleaned.startswith("```"):
@@ -35,8 +43,8 @@ def parse_json_from_llm(text: str) -> Any:
     # Attempt 1: Direct parse with strict=False (allows raw newlines/tabs inside strings)
     try:
         return json.loads(cleaned, strict=False)
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        logger.debug("JSON attempt 1 (direct strict=False) failed: %s", e)
 
     # Attempt 2: Extract top-level { ... } or [ ... ] block
     match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", cleaned)
@@ -44,21 +52,21 @@ def parse_json_from_llm(text: str) -> Any:
         extracted = match.group(0).strip()
         try:
             return json.loads(extracted, strict=False)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001
+            logger.debug("JSON attempt 2a (extracted block) failed: %s", e)
         # Remove trailing commas before closing braces/brackets
         no_trailing_commas = re.sub(r",\s*([\]}])", r"\1", extracted)
         try:
             return json.loads(no_trailing_commas, strict=False)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001
+            logger.debug("JSON attempt 2b (extracted, trailing commas stripped) failed: %s", e)
 
     # Attempt 3: Strip trailing commas from full cleaned string
     no_trailing_commas = re.sub(r",\s*([\]}])", r"\1", cleaned)
     try:
         return json.loads(no_trailing_commas, strict=False)
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        logger.debug("JSON attempt 3 (full string, trailing commas stripped) failed: %s", e)
 
     # Attempt 4: Clean non-printable control characters
     sanitized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", cleaned)

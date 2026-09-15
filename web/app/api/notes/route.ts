@@ -15,7 +15,11 @@ export async function GET(req: NextRequest) {
   }
 
   const authUser = await getAuthUserFromHeader(req.headers.get("authorization"));
-  const notes = await fetchNotesFromSupabase(projectId, authUser?.id || null);
+  if (!authUser) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const notes = await fetchNotesFromSupabase(projectId, authUser.id);
   return NextResponse.json({ notes: notes || [], configured: true });
 }
 

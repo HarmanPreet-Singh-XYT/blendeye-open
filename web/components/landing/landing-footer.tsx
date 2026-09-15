@@ -1,8 +1,6 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
-import { Film, Terminal, Database, Sparkles } from "lucide-react";
 import { SlateLabel } from "@/components/cinema/slate-label";
 
 export function LandingFooter() {
@@ -22,13 +20,13 @@ export function LandingFooter() {
               <SlateLabel>Production Suite</SlateLabel>
             </div>
             <p className="text-xs text-muted-foreground max-w-md">
-              The writers&apos; room that knows what your characters know. Built for the Google Cloud Agentic Cinema Hackathon (ClickHouse Partner Track).
+              The writers&apos; room that knows what your characters know. Built on Google Cloud AI and the ClickHouse story events plane.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-6 text-xs text-muted-foreground">
-            <Link href="/studio/aethelgard-chronos-shift" className="hover:text-foreground transition-colors">
-              Aethelgard: Chronos Shift
+            <Link href="/dashboard" className="hover:text-foreground transition-colors">
+              Studio Dashboard
             </Link>
             <Link href="/canvas-demo" className="hover:text-foreground transition-colors">
               Canvas Sandbox
@@ -48,7 +46,7 @@ export function LandingFooter() {
           <div className="flex items-center gap-4">
             <span>MIT License</span>
             <span>·</span>
-            <span>Google Cloud &amp; ClickHouse Hackathon 2026</span>
+            <span>© 2026 BlendEye</span>
           </div>
         </div>
       </div>

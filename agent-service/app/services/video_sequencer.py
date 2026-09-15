@@ -14,7 +14,7 @@ Continuity across shots is enforced two ways:
 
 This runs as a plain in-memory background asyncio task (this service is
 otherwise stateless — see runner.py's docstring — so a process restart
-loses in-flight jobs; that's an acceptable tradeoff for a hackathon-scope
+loses in-flight jobs; that's an acceptable tradeoff for a demo-scope
 feature and mirrors how Veo operations themselves are already not
 persisted anywhere durable).
 """
@@ -88,8 +88,46 @@ class SequenceJob(BaseModel):
 # one worker process.
 _JOBS: dict[str, SequenceJob] = {}
 
+# `asyncio.create_task` only keeps a *weak* reference to the task, so a long
+# chained run (up to ~6 min/shot) can be garbage-collected mid-flight unless
+# something holds a strong reference. This set is that reference; the done
+# callback drops it so finished jobs don't leak.
+_RUNNING_TASKS: set[asyncio.Task] = set()
+
+# Bound the in-memory job store. Nothing else evicts entries, so without this
+# a long-lived process accumulates every job it has ever run.
+_MAX_JOBS = 64
+_JOB_TTL_SECONDS = 3600
+
+
+def _is_terminal(job: SequenceJob) -> bool:
+    return job.status in ("completed", "error")
+
+
+def _prune_jobs() -> None:
+    """Drops finished jobs older than the TTL, then trims the oldest finished
+    jobs until the store is back under `_MAX_JOBS`. In-flight jobs are never
+    evicted — exceeding the cap temporarily is preferable to killing a render.
+    """
+    now = time.time()
+    for job_id, job in list(_JOBS.items()):
+        if _is_terminal(job) and (now - job.updated_at) > _JOB_TTL_SECONDS:
+            _JOBS.pop(job_id, None)
+
+    overflow = len(_JOBS) - _MAX_JOBS
+    if overflow <= 0:
+        return
+
+    finished = sorted(
+        (job for job in _JOBS.values() if _is_terminal(job)),
+        key=lambda job: job.updated_at,
+    )
+    for job in finished[:overflow]:
+        _JOBS.pop(job.job_id, None)
+
 
 def get_job(job_id: str) -> SequenceJob | None:
+    _prune_jobs()
     return _JOBS.get(job_id)
 
 
@@ -262,7 +300,7 @@ async def _run_sequence(
         # just continues without a reference image for the next shot, rather
         # than aborting a scene over a frame-grab hiccup.
         try:
-            if video_url.startswith("http://") or video_url.startswith("https://") or video_url.startswith("data:"):
+            if video_url.startswith(("http://", "https://", "data:")):
                 video_source = video_url
             else:
                 video_source = _WEB_PUBLIC_DIR / video_url.lstrip("/")
@@ -285,6 +323,8 @@ def start_sequence_job(
     shots: list[SequenceShotInput],
     reference_images: dict[str, str] | None = None,
 ) -> SequenceJob:
+    _prune_jobs()
+
     job_id = f"seq-{uuid.uuid4().hex[:12]}"
     job = SequenceJob(
         job_id=job_id,
@@ -294,5 +334,8 @@ def start_sequence_job(
     )
     _JOBS[job_id] = job
 
-    asyncio.create_task(_run_sequence(job_id, shots, reference_images))
+    # Hold a strong reference for the lifetime of the run (see _RUNNING_TASKS).
+    task = asyncio.create_task(_run_sequence(job_id, shots, reference_images))
+    _RUNNING_TASKS.add(task)
+    task.add_done_callback(_RUNNING_TASKS.discard)
     return job

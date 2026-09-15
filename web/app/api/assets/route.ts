@@ -19,7 +19,11 @@ export async function GET(req: NextRequest) {
   }
 
   const authUser = await getAuthUserFromHeader(req.headers.get("authorization"));
-  const assets = await fetchAssetsFromSupabase(authUser?.id || null, projectId, category);
+  if (!authUser) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const assets = await fetchAssetsFromSupabase(authUser.id, projectId, category);
   return NextResponse.json({ assets: assets || [], configured: true });
 }
 

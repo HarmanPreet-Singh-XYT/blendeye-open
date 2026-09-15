@@ -14,8 +14,6 @@ one place holds Gemini credentials, the web layer is a thin proxy.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from google.adk import Agent
 from pydantic import BaseModel, Field
 
@@ -29,8 +27,8 @@ class SequenceCharacter(BaseModel):
     speech_style: str = Field(default="measured, guarded, rhythmic")
     subtext_ratio: str = Field(default="high")
     objective: str = Field(description="Central dramatic desire")
-    dials_summary: Optional[str] = Field(default=None, description="e.g. 'Confidence 90% · Subtext 85%'")
-    actor_comp: Optional[str] = Field(default=None, description="Casting comp reference")
+    dials_summary: str | None = Field(default=None, description="e.g. 'Confidence 90% · Subtext 85%'")
+    actor_comp: str | None = Field(default=None, description="Casting comp reference")
 
 
 class SceneCastRole(BaseModel):

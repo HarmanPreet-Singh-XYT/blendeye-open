@@ -2,7 +2,7 @@
 Evaluates scene breakdowns, production bases, budgets, and cinematic precedents.
 
 Parallel Web Systems (services/parallel_search.py) is the primary runtime
-grounding source, satisfying the Parallel partner-track requirement — it
+grounding source, providing live search enrichment — it
 enriches every candidate post-generation with live search results. ADK's
 native google_search tool is attached to this agent ONLY as a backup for
 when Parallel is unconfigured/unreachable (see with_search + callers in

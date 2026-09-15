@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { getSupabaseAdminClient, getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import { getSupabaseAdminClient, isSupabaseConfigured } from "@/lib/supabase";
 
 /**
  * Persistent Generation Cache for Agentic Cinema.
@@ -9,9 +9,21 @@ import { getSupabaseAdminClient, getSupabaseClient, isSupabaseConfigured } from 
  * 1. In-memory fast RAM cache (LRU buffer, 30 min TTL)
  * 2. Supabase Postgres `generation_cache` table (distributed, cloud persistent)
  * 3. Local disk cache `.cache/agentic_cinema/` (ephemeral dev fallback)
+ *
+ * SERVER-ONLY. Every caller is a Next.js API route. The `generation_cache`
+ * table has RLS enabled with no policies, so only the service-role admin client
+ * can read or write it — a browser-side (anon-key) caller would be denied, and
+ * previously would also have let any visitor poison or clear the shared cache.
+ * Do not import this module from a client component.
  */
 
 const CACHE_DIR = path.join(process.cwd(), ".cache", "agentic_cinema");
+
+// Bump when a cached result shape or the prompt that produced it changes, so
+// entries from a previous format are never served. Without this the key was
+// `namespace:payload` only, so editing a prompt silently kept returning the old
+// generation for an identical payload.
+const CACHE_SCHEMA_VERSION = "v2";
 
 // In-memory LRU fast buffer to prevent DB / disk I/O on rapid repeated hits
 const memoryCache = new Map<string, { data: any; expiresAt: number }>();
@@ -28,11 +40,26 @@ function ensureCacheDir(namespace: string): string {
   return dir;
 }
 
+/**
+ * Service-role client for the cache table, or null when it isn't configured.
+ * Returns null rather than falling back to the anon key, so the caller degrades
+ * to the disk cache instead of attempting a write that RLS will reject.
+ */
+function getCacheSupabaseClient() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    return getSupabaseAdminClient();
+  } catch (err) {
+    console.warn("[GenerationCache] admin client unavailable; using disk cache only:", err);
+    return null;
+  }
+}
+
 export function hashPayload(namespace: string, payload: unknown): string {
   const normalized = typeof payload === "string" ? payload : JSON.stringify(payload);
   return crypto
     .createHash("sha256")
-    .update(`${namespace}:${normalized}`)
+    .update(`${CACHE_SCHEMA_VERSION}:${namespace}:${normalized}`)
     .digest("hex");
 }
 
@@ -52,7 +79,7 @@ export async function getCachedGeneration<T>(
   // 2. Check Supabase cloud generation_cache table
   if (isSupabaseConfigured()) {
     try {
-      const client = typeof window === "undefined" ? getSupabaseAdminClient() || getSupabaseClient() : getSupabaseClient();
+      const client = getCacheSupabaseClient();
       if (client) {
         const { data, error } = await client
           .from("generation_cache")
@@ -116,7 +143,7 @@ export async function setCachedGeneration<T>(
   // Write to Supabase cloud generation_cache
   if (isSupabaseConfigured()) {
     try {
-      const client = typeof window === "undefined" ? getSupabaseAdminClient() || getSupabaseClient() : getSupabaseClient();
+      const client = getCacheSupabaseClient();
       if (client) {
         await client
           .from("generation_cache")

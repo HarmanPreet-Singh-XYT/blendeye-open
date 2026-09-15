@@ -859,7 +859,7 @@ export function ProjectScenesPage({
               </div>
             </div>
 
-            {/* Featured Hackathon Centerpiece Demo Callout (for The Vault Heist) */}
+            {/* Featured Demo Callout (for The Vault Heist) */}
             {project.id.includes("vault-heist") && (
               <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
                 <div className="flex items-center gap-3">
@@ -869,7 +869,7 @@ export function ProjectScenesPage({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-amber-400">
-                        Hackathon Centerpiece: Scene 3 (The Vault Breach)
+                        Featured Demo: Scene 3 (The Vault Breach)
                       </span>
                       <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px]">
                         Minute 34 vs 52 Time-Gate

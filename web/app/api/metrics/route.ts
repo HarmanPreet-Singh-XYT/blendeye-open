@@ -19,7 +19,7 @@ export async function GET() {
 
   return NextResponse.json({
     studio: "BlendEye Executive Backlot",
-    partner_integrations: ["ClickHouse Cloud"],
+    integrations: ["ClickHouse Cloud"],
     mcp_servers: {
       clickhouse_mcp: "unreachable",
       state: "degraded",

@@ -1,9 +1,7 @@
-# Execution Plan — 6 Days to Submission
+# Execution Plan — 6-Day Build
 
-**Deadline:** 2026-09-08/09 (contest closes 2026-09-09, 2:00 PM PT). Today: 2026-09-03.
-**Track:** ClickHouse. **Goal:** a 3-minute demo video with one unforgettable moment, backed by
-a submission that clears Stage One (real runtime ClickHouse + Google Cloud AI usage, public
-repo with OSS license, hosted URL).
+**Goal:** a 3-minute demo video with one unforgettable moment, backed by real runtime ClickHouse
++ Google Cloud AI usage, a public repo with an OSS license, and a hosted URL.
 
 Full product context: `idea.md`. Deferred features: `idea-full-vision.md`.
 
@@ -12,7 +10,7 @@ Full product context: `idea.md`. Deferred features: `idea-full-vision.md`.
 ## Guiding principle: layered build, graceful degradation
 
 Each layer below is independently demoable. If a layer runs late, the layer below it becomes
-the fallback for the video — nothing above Layer 0 is load-bearing for eligibility, and Layer 5
+the fallback for the video — nothing above Layer 0 is load-bearing for the core promise, and Layer 5
 (polish) is protected even if it means cutting Layer 3 or 4 early. Decide per-layer cut/keep by
 its checkpoint date; don't let indecision eat into Layer 5 time.
 
@@ -25,7 +23,7 @@ hardcoded timeline scrub behavior driven by static data. No live generation yet.
 
 **Why first:** this alone is the worst-case fallback demo. If everything above it fails, a
 scripted walkthrough of Layer 0 with pre-baked data still looks like a real product on video —
-judges watching a video cannot distinguish "computed live" from "computed earlier and replayed."
+a viewer watching a recording cannot distinguish "computed live" from "computed earlier and replayed."
 
 **Checkpoint (end of Day 1):** can click through graph → script → scrub timeline → see a
 character's knowledge state change, all from static fixtures.
@@ -66,10 +64,9 @@ answers feel authored, not generic.
 **Cut fallback — the one real risk-mitigation call in this plan:** if the live pipeline
 (script → sharder → ClickHouse → time-gated chat) isn't reliable by Day 4, pre-generate and
 store the sharded ClickHouse events for the one demo scene ahead of the recording session, and
-only perform the scrub-and-ask interaction live/on-camera. The judges evaluate the video; a
-video cannot distinguish a query that ran five minutes before recording from one that ran
-during it. Do NOT let this pipeline's polish slip — it's the one thing this whole submission
-is judged on.
+only perform the scrub-and-ask interaction live/on-camera. A recording cannot distinguish a query
+that ran five minutes before recording from one that ran during it. Do NOT let this pipeline's
+polish slip — it's the one thing this whole demo rests on.
 
 ### `story_events` schema (ClickHouse)
 
@@ -101,7 +98,7 @@ ORDER BY event_timestamp;
 ## Layer 3 — One visual payoff (Days 4–5)
 
 Imagen 3 storyboard generation for the demo scene (16:9 frames). Chosen over the director's
-floor plan node — more immediately legible as "cinematic" to a judge scanning quickly.
+floor plan node — more immediately legible as "cinematic" to a viewer scanning quickly.
 
 **Checkpoint:** clicking generate on the scene node produces storyboard frames in the graph.
 
@@ -118,9 +115,8 @@ grounded in real regional data). Additive on top of Layer 2's story-event engine
 replace it. See `idea.md` Section 3 / memory note `project-clickhouse-track-choice` for the
 reasoning on why this is a second role, not the primary integration.
 
-**Cut fallback:** cut entirely. Layer 2 alone already satisfies the ClickHouse track
-requirement (real runtime MCP usage) — this layer is pure upside for "Quality of Idea" scoring,
-not a requirement.
+**Cut fallback:** cut entirely. Layer 2 alone already satisfies the ClickHouse integration
+requirement (real runtime MCP usage) — this layer is pure upside, not a requirement.
 
 ---
 
@@ -143,25 +139,23 @@ reliably. Only attempt this if Layers 0–3 are done with real time left on Day 
 **Note on scope:** YouTube/video-essay ingestion (originally idea-full-vision.md's ingest
 mechanism) is deprioritized to last/optional for this build — a filmmaker pitching original
 work is unlikely to want visible sourcing from someone else's copyrighted video on camera, and
-it raises IP/rights exposure given the hackathon's originality warranty (Official Rules §15).
+it raises IP/rights exposure around third-party footage.
 Not worth build time or risk; user input for scene generation stays text-based (premise/prompt)
-for this submission.
+for this build.
 
 ---
 
-## Layer 5 — Polish + submission assembly (protected time block, Day 5 evening–Day 6)
+## Layer 5 — Polish (protected time block, Day 5 evening–Day 6)
 
 **Never cut this. Cut Layer 3 or 4 earlier rather than raiding this time.**
 
-- UI transitions, loading states, empty states — a judge's impression is more edit-quality than
+- UI transitions, loading states, empty states — first impression is more edit-quality than
   feature-count.
 - Record the 3-minute demo video following the arc in `idea.md` Section 6. Multiple takes if
-  needed; this is the single highest-leverage artifact in the whole submission.
-- Write the text description (features, tech stack, data sources, learnings) — required field.
+  needed; this is the single highest-leverage artifact in the whole project.
+- Write the project description (features, tech stack, data sources, learnings).
 - Confirm repo is public, OSS license file present and detectable in the About section.
 - Confirm the deployed URL works from a clean session (no dev-only env assumptions).
-- Submit on Devpost with time to spare before 2026-09-09 2:00 PM PT — do not target the deadline
-  itself as the submission time.
 
 ---
 
@@ -174,7 +168,7 @@ for this submission.
 | 3 | Layer 2 (time-gate wiring, hot-seat chat) | Scrub-and-ask works with real ClickHouse queries |
 | 4 | Layer 2 polish + reliability decision point | Decide: live demo or pre-baked-data demo for recording |
 | 5 | Layer 3 (storyboard) if time allows, then Layer 4 / 4b (grounding flourish / fusion stretch) if time allows | Visual payoff working OR consciously cut |
-| 6 | Layer 5 only — polish, record video, assemble submission, submit early | Submitted on Devpost with buffer before deadline |
+| 6 | Layer 5 only — polish, record video, finalize docs | Demo video recorded, repo public and documented |
 
 ---
 

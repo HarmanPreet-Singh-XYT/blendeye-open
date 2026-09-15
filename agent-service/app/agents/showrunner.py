@@ -6,9 +6,13 @@ and acts as a senior Hollywood screenwriting collaborator and script doctor.
 
 from __future__ import annotations
 
+import logging
+
 from google.adk import Agent
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 INSTRUCTION = """
 You are an elite Hollywood Showrunner and veteran screenwriting co-creator collaborating with a Director.
@@ -32,14 +36,17 @@ async def parallel_web_search(query: str) -> str:
     industry box office comps, real-world locations, or script research.
     """
     from app.services.parallel_search import search_parallel
+    from app.services.prompt_sanitizer import sanitize_untrusted_context
 
     results = await search_parallel(query, num_results=3)
     if not results:
         return "No web results found via Parallel Web Systems."
     formatted = []
     for r in results:
-        excerpts = " ".join(r.get("excerpts", []))[:300]
-        formatted.append(f"Title: {r['title']}\nURL: {r['url']}\nSummary: {excerpts}")
+        # Tool results are open-web text and therefore untrusted input to the
+        # model — strip instruction-like content before it re-enters context.
+        summary = sanitize_untrusted_context(" ".join(r.get("excerpts", [])), max_chars=300)
+        formatted.append(f"Title: {r['title']}\nURL: {r['url']}\nSummary: {summary}")
     return "\n---\n".join(formatted)
 
 
@@ -79,17 +86,20 @@ def build_showrunner_agent(*, with_mcp: bool = True) -> Agent:
     settings = get_settings()
     tools = [parallel_web_search, query_studio_telemetry]
     if with_mcp:
+        # An MCP toolset that fails to construct is skipped rather than failing
+        # the whole agent — but it is logged, because silently running the
+        # Showrunner without its ClickHouse/Grafana tools looks identical to a
+        # working setup from the outside.
         try:
             from app.services.clickhouse_mcp import build_clickhouse_toolset
             tools.append(build_clickhouse_toolset())
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as e:  # noqa: BLE001
+            logger.warning("ClickHouse MCP toolset unavailable; Showrunner runs without it: %s", e)
         try:
             from app.services.grafana_mcp import build_grafana_toolset
             tools.append(build_grafana_toolset())
-        except Exception:  # noqa: BLE001, S110
-            pass
-
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Grafana MCP toolset unavailable; Showrunner runs without it: %s", e)
 
     return Agent(
         name="writers_room_showrunner",

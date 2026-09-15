@@ -156,7 +156,6 @@ import {
   NARRATIVE_FORMATS,
   updateProjectTimeframe,
   type NodeCallbacks,
-  SEED_PROJECTS,
   getActiveUserId,
   getActiveAuthToken,
   getAuthHeaders,
@@ -164,14 +163,13 @@ import {
 import { ProjectTimeframeDialog } from "@/components/cinema/project-timeframe-dialog";
 import { SceneLocationDock } from "@/components/cinema/scene-location-dock";
 import { cleanCandidateName } from "@/components/cinema/location-board";
-
-export const PRESET_SCENARIOS = SEED_PROJECTS;
+import { AuthGate } from "@/components/cinema/auth-gate";
 
 type MainStudioTab = "planning" | "simulation" | "generation" | "showrunner";
 type SimulationSubTab = "audio" | "hotseat" | "chemistry";
 type DeckSubTab = "blocking" | "location" | "tension";
 
-export default function StudioPage() {
+function StudioWorkspace() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -186,8 +184,7 @@ export default function StudioPage() {
   }, [rawProjectId]);
 
   const initialProject: ProjectData =
-    foundProject ||
-    SEED_PROJECTS[0] || {
+    foundProject || {
       id: rawProjectId || "unknown",
       title: "Untitled Production",
       genre: "Drama",
@@ -2373,14 +2370,8 @@ export default function StudioPage() {
           <Button onClick={() => router.push("/dashboard")} className="gap-2 bg-foreground text-background hover:bg-foreground/90">
             Back to Dashboard
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              router.push("/studio/vault-heist-demo");
-            }}
-            className="gap-2"
-          >
-            Explore Vault Heist Demo
+          <Button variant="outline" onClick={() => router.push("/dashboard")} className="gap-2">
+            Load the Guided Demo
           </Button>
         </div>
       </div>
@@ -3860,7 +3851,7 @@ export default function StudioPage() {
         onExecutePrompt={handleExecuteCommanderPrompt}
       />
 
-      {/* Official Partner: ClickHouse MCP Database Toolbox Modal */}
+      {/* ClickHouse MCP Database Toolbox Modal */}
       <ClickHouseToolboxDialog
         open={clickhouseToolboxOpen}
         onOpenChange={setClickhouseToolboxOpen}
@@ -4216,5 +4207,13 @@ export default function StudioPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function StudioPage() {
+  return (
+    <AuthGate>
+      <StudioWorkspace />
+    </AuthGate>
   );
 }

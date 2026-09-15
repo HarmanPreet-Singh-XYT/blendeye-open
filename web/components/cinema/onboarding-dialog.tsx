@@ -216,9 +216,9 @@ const STEPS: Array<{
   {
     icon: MessageSquareText,
     tag: "Showrunner AI",
-    title: "Notes grounded in real comps",
+    title: "Notes grounded in stored comps",
     description:
-      "The Showrunner co-writer doesn't just have opinions about your pacing — it queries a table of real films, tropes, and audience retention data and cites them when it critiques a scene. Apply its rewrites directly through conversation.",
+      "The Showrunner co-writer doesn't just have opinions about your pacing — it queries a table of real films, tropes, and retention benchmarks and cites them when it critiques a scene. (The numeric benchmarks are hand-authored demo data, not measured box office.) Apply its rewrites directly through conversation.",
     visual: <PrecedentsVisual />,
   },
   {

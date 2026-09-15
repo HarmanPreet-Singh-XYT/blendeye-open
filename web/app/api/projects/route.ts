@@ -7,13 +7,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       projects: [],
       configured: false,
-      message: "Supabase not configured; client using local state.",
+      message: "Supabase not configured; cloud storage is required.",
     });
   }
 
-  // Extract authenticated user if present
+  // The app is cloud-only and login-gated, so there is no anonymous project
+  // view: without a verified token this returns nothing rather than leaking
+  // shared/seed rows.
   const authUser = await getAuthUserFromHeader(req.headers.get("authorization"));
-  const projects = await fetchProjectsFromSupabase(authUser?.id || null);
+  if (!authUser) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+
+  const projects = await fetchProjectsFromSupabase(authUser.id);
 
   if (projects === null) {
     return NextResponse.json({
@@ -28,7 +34,7 @@ export async function GET(req: NextRequest) {
     projects,
     configured: true,
     tablesReady: true,
-    user: authUser ? { id: authUser.id, email: authUser.email } : null,
+    user: { id: authUser.id, email: authUser.email },
   });
 }
 

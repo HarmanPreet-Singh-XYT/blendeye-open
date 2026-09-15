@@ -14,14 +14,9 @@ export type AssetCategory =
   | "audio"
   | "general";
 
-import { getActiveUserId } from "@/lib/project-store";
+import { getActiveAuthToken } from "@/lib/project-store";
 
 export type AssetType = "image" | "video" | "map" | "audio";
-
-export function getAssetsStorageKey(userId?: string | null): string {
-  const uid = userId !== undefined ? userId : getActiveUserId();
-  return uid ? `agentic_cinema_assets_u_${uid}` : "agentic_cinema_assets_v1";
-}
 
 // Seeded Curated Assets for instantaneous preview (Aethelgard: The Chronos Shift production)
 // All URLs are local — no Supabase dependency, no network calls, no bucket permissions needed.
@@ -312,97 +307,134 @@ export const SEED_ASSETS: CinemaAsset[] = [
   },
 ];
 
-/**
- * Read all stored assets from browser storage, merged with seeded assets.
- */
-export function getLocalAssets(userId?: string | null): CinemaAsset[] {
-  if (typeof window === "undefined") return SEED_ASSETS;
+// ---------------------------------------------------------------------------
+// Asset cache (cloud only)
+//
+// Assets live in Supabase. `SEED_ASSETS` above are static, bundled reference
+// images shipped with the app (local /public URLs, no network calls) that are
+// always available as a baseline library; everything the user uploads or
+// generates is fetched from and written to the cloud. Nothing is kept in
+// browser storage.
+// ---------------------------------------------------------------------------
 
-  try {
-    const key = getAssetsStorageKey(userId);
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      localStorage.setItem(key, JSON.stringify(SEED_ASSETS));
-      return SEED_ASSETS;
-    }
-    const parsed: CinemaAsset[] = JSON.parse(raw);
-    
-    // Auto-migrate: Purge legacy assets (vault-heist/marcus/elena)
-    const hasLegacy = parsed.some(
-      (a) =>
-        a.id?.includes("marcus") ||
-        a.id?.includes("elena") ||
-        a.url?.includes("ai_vault_plate") ||
-        a.id?.startsWith("seed-")
-    );
-    if (hasLegacy) {
-      // Re-seed from fresh local assets while preserving non-legacy user assets
-      const nonLegacy = parsed.filter(
-        (a) =>
-          !a.id?.includes("marcus") &&
-          !a.id?.includes("elena") &&
-          !a.url?.includes("ai_vault_plate") &&
-          !a.id?.startsWith("seed-")
-      );
-      const combined = [...SEED_ASSETS, ...nonLegacy];
-      localStorage.setItem(key, JSON.stringify(combined));
-      return combined;
-    }
+let assetsCache: CinemaAsset[] = [];
+let assetsHydrated = false;
+let assetsHydration: Promise<void> | null = null;
 
-    // Ensure all seed assets are present
-    const map = new Map<string, CinemaAsset>();
-    for (const a of SEED_ASSETS) map.set(a.id, a);
-    for (const a of parsed) map.set(a.id, a);
-    return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  } catch (err) {
-    console.warn("[AssetStore] Could not read local assets:", err);
-    return SEED_ASSETS;
-  }
+/** True once the account's assets have been pulled from Supabase. */
+export function areAssetsHydrated(): boolean {
+  return assetsHydrated;
+}
+
+function mergeWithSeedAssets(assets: CinemaAsset[]): CinemaAsset[] {
+  const map = new Map<string, CinemaAsset>();
+  for (const a of SEED_ASSETS) map.set(a.id, a);
+  for (const a of assets) map.set(a.id, a);
+  return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function assetAuthHeaders(json = false): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const token = getActiveAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (json) headers["Content-Type"] = "application/json";
+  return headers;
+}
+
+/** Clears the cache on sign-out so assets never leak between accounts. */
+export function clearAssetCache(): void {
+  assetsCache = [];
+  assetsHydrated = false;
+  assetsHydration = null;
 }
 
 /**
- * Save an asset to local storage and dispatch update event.
+ * Pulls the account's assets from Supabase into memory, merged over the
+ * bundled seed library. Concurrent calls share one request.
  */
-export function saveLocalAsset(asset: CinemaAsset, userId?: string | null): CinemaAsset[] {
+export function hydrateAssets(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (!getActiveAuthToken()) return Promise.resolve();
+  if (assetsHydration) return assetsHydration;
+
+  assetsHydration = (async () => {
+    try {
+      const res = await fetch("/api/assets", { headers: assetAuthHeaders(), cache: "no-store" });
+      if (!res.ok) {
+        console.warn(`[AssetStore] asset fetch failed (${res.status})`);
+        return;
+      }
+      const data = await res.json();
+      if (!Array.isArray(data?.assets)) return;
+      assetsCache = mergeWithSeedAssets(data.assets as CinemaAsset[]);
+      assetsHydrated = true;
+      window.dispatchEvent(new CustomEvent("cinema-assets-updated", { detail: assetsCache }));
+    } catch (err) {
+      console.warn("[AssetStore] asset hydration failed:", err);
+    } finally {
+      assetsHydration = null;
+    }
+  })();
+
+  return assetsHydration;
+}
+
+/**
+ * All assets visible to the account: the cloud cache merged over the bundled
+ * seed library. Kicks off a one-shot hydration if the cache is still cold.
+ */
+export function getLocalAssets(_userId?: string | null): CinemaAsset[] {
+  if (typeof window === "undefined") return SEED_ASSETS;
+  if (!assetsHydrated) void hydrateAssets();
+  if (assetsCache.length === 0) return SEED_ASSETS;
+  return assetsCache;
+}
+
+/**
+ * Saves an asset to the cache and mirrors it to Supabase.
+ */
+export function saveLocalAsset(asset: CinemaAsset, _userId?: string | null): CinemaAsset[] {
   if (typeof window === "undefined") return [asset];
 
-  try {
-    const key = getAssetsStorageKey(userId);
-    const current = getLocalAssets(userId);
-    const existingIndex = current.findIndex((a) => a.id === asset.id);
-    let updated: CinemaAsset[];
-    if (existingIndex >= 0) {
-      updated = [...current];
-      updated[existingIndex] = { ...updated[existingIndex], ...asset };
-    } else {
-      updated = [asset, ...current];
-    }
-    localStorage.setItem(key, JSON.stringify(updated));
-    window.dispatchEvent(new CustomEvent("cinema-assets-updated", { detail: updated }));
-    return updated;
-  } catch (err) {
-    console.warn("[AssetStore] Could not save local asset:", err);
-    return getLocalAssets(userId);
-  }
+  const current = assetsCache.length > 0 ? assetsCache : SEED_ASSETS;
+  const existing = current.findIndex((a) => a.id === asset.id);
+  const merged =
+    existing >= 0
+      ? current.map((a, i) => (i === existing ? { ...a, ...asset } : a))
+      : [asset, ...current];
+
+  assetsCache = mergeWithSeedAssets(merged);
+  window.dispatchEvent(new CustomEvent("cinema-assets-updated", { detail: assetsCache }));
+
+  fetch("/api/assets", {
+    method: "POST",
+    headers: assetAuthHeaders(true),
+    body: JSON.stringify(asset),
+  }).catch((err) => {
+    console.warn("[AssetStore] asset cloud sync warning:", err);
+  });
+
+  return assetsCache;
 }
 
 /**
- * Delete an asset from local storage and dispatch update event.
+ * Deletes an asset from the cache and from Supabase.
  */
-export function deleteLocalAsset(assetId: string, userId?: string | null): CinemaAsset[] {
+export function deleteLocalAsset(assetId: string, _userId?: string | null): CinemaAsset[] {
   if (typeof window === "undefined") return [];
 
-  try {
-    const key = getAssetsStorageKey(userId);
-    const current = getLocalAssets(userId);
-    const updated = current.filter((a) => a.id !== assetId);
-    localStorage.setItem(key, JSON.stringify(updated));
-    window.dispatchEvent(new CustomEvent("cinema-assets-updated", { detail: updated }));
-    return updated;
-  } catch (err) {
-    console.warn("[AssetStore] Could not delete local asset:", err);
-    return getLocalAssets(userId);
-  }
+  const current = assetsCache.length > 0 ? assetsCache : SEED_ASSETS;
+  assetsCache = current.filter((a) => a.id !== assetId);
+  window.dispatchEvent(new CustomEvent("cinema-assets-updated", { detail: assetsCache }));
+
+  fetch(`/api/assets?id=${encodeURIComponent(assetId)}`, {
+    method: "DELETE",
+    headers: assetAuthHeaders(),
+  }).catch((err) => {
+    console.warn("[AssetStore] asset cloud delete warning:", err);
+  });
+
+  return assetsCache;
 }
 
 /**

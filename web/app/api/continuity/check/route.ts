@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const projectId = typeof body?.project_id === "string" ? body.project_id : "vault-heist-demo";
+  const projectId = typeof body?.project_id === "string" ? body.project_id : "";
   const screenplayText = typeof body?.screenplay_text === "string" ? body.screenplay_text.trim() : "";
   const characters = Array.isArray(body?.characters) ? body.characters : [];
   const scenes = Array.isArray(body?.scenes) ? body.scenes : [];

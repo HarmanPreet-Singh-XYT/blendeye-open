@@ -123,7 +123,7 @@ const SUPPORTED_LANGUAGES = [
 ];
 
 export function SceneScoreView({
-  projectId = "vault-heist-demo",
+  projectId = "",
   scenes = [],
   activeSceneId,
   onSelectScene,
