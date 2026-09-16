@@ -29,7 +29,7 @@
       "targetBlank": true,
       "title": "BlendEye Live Studio",
       "tooltip": "Open Live Production Studio",
-      "url": "https://blendeye.harmanita.com"
+      "url": "https://blendeye-open.vercel.app"
     }
   ],
   "liveNow": true,

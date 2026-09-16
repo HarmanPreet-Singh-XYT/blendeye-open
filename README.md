@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  🌐 <strong><a href="https://blendeye.harmanita.com">Live Production Studio — blendeye.harmanita.com</a></strong>
+  🌐 <strong><a href="https://blendeye-open.vercel.app">Live Production Studio — blendeye-open.vercel.app</a></strong>
 </p>
 <br>
 
@@ -76,7 +76,7 @@
 
 | Integration | Status | Where it runs |
 | :--- | :--- | :--- |
-| **Hosted, publicly reachable deployment** | ✅ Live | [blendeye.harmanita.com](https://blendeye.harmanita.com) |
+| **Hosted, publicly reachable deployment** | ✅ Live | [blendeye-open.vercel.app](https://blendeye-open.vercel.app) |
 | **Google Cloud AI** | ✅ Active | `google-genai` + `google-adk` invoked across `app/routers/media.py`, `app/services/video_sequencer.py`, `app/agents/*.py` — runtime calls to `gemini-3.7-flash`, `gemini-3.1-flash-tts-preview`, and `gemini-omni-1.1-flash`. |
 | **ClickHouse via `mcp-clickhouse`** | ✅ Active | `app/services/clickhouse_mcp.py` runs the official `mcp-clickhouse` server as an `McpToolset` on the live Showrunner agent (`app/agents/showrunner.py`) for commercial comps. |
 | **ClickHouse Cloud / self-hosted cluster** | ✅ Active | Production deployment connects to **ClickHouse Cloud** with sub-3ms query latencies. |
