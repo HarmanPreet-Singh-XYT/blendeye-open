@@ -165,7 +165,13 @@ export function LandingNavbar({ onOpenNewProject }: LandingNavbarProps) {
             </Link>
           )}
 
-          <AuthUserButton />
+          {/* AuthUserButton renders its OWN "Sign In" link when signed out,
+              which sat directly beside this navbar's signed-out CTA and produced
+              two identical "Sign In" buttons side by side. It is really the
+              account menu, so only mount it once there is an account to manage.
+              The navbar's own link stays as the signed-out CTA because it also
+              carries ?redirect=%2Fdashboard, which AuthUserButton's does not. */}
+          {isAuthenticated && <AuthUserButton />}
         </div>
       </div>
     </header>

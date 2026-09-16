@@ -32,6 +32,18 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      # PROJECT_ID has no fallback (unlike REGION), so an unset GCP_PROJECT_ID
+      # expands `--project` to nothing and gcloud answers with its entire usage
+      # text — "argument --project: expected one argument" — which reads like a
+      # syntax error rather than missing configuration. Fail clearly instead.
+      - name: Verify required configuration
+        run: |
+          if [ -z "${PROJECT_ID}" ]; then
+            echo "::error::GCP_PROJECT_ID is not set. Add it under Settings > Secrets and variables > Actions > Secrets."
+            exit 1
+          fi
+          echo "Deploying ${SERVICE_NAME} to project ${PROJECT_ID} in ${REGION}"
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
